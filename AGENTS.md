@@ -9,6 +9,6 @@ Rules:
 - Loadable code only under Mason/
 - Do not write Blizzard action slots, CDM, or Edit Mode integration.
 - No CreateFrame, SetAttribute, SetOverrideBinding*, RegisterStateDriver in combat.
-- Public functions added this phase must be listed at the end of the session.
+- Public functions added this phase must match SPEC/api.md.
 - If SPEC is silent, stop and ask. Do not invent features.
 - Nouns: kit, piece, layout. Product name: Mason. Slash: /mason.
