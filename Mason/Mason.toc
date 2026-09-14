@@ -1,0 +1,9 @@
+## Interface: 120100
+## Title: Mason
+## Notes: Place your abilities.
+## Author: Adam Gray
+## Version: 0.1.0-dev
+## SavedVariables: MasonDB
+## OptionalDeps: Masque, Ace3
+
+Mason.lua
