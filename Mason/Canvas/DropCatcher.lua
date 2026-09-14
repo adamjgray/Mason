@@ -126,18 +126,19 @@ function Mason:PlaceCursorAction(action, x, y)
   end
   self:WriteViewLayout(piece.id, x, y)
   local msg = "placed " .. self:PieceLabel(piece)
-  if InCombatLockdown() then
-    self:StashNotify(msg)
-    return self:QueueIfCombat(function()
-      self:PlaceView(piece.id, x, y)
-    end)
-  end
   self:PlaceView(piece.id, x, y)
   self:Notify(msg)
-  return false
+  if self:IsLocked() then
+    self:SetLocked(false)
+    self:Notify("unlocked")
+  end
 end
 
 function Mason:HandleCanvasDrop()
+  if InCombatLockdown() then
+    self:Notify("cannot place in combat")
+    return
+  end
   local action, err = self:ParseCursorAction()
   if err == "ambiguous" then
     return
@@ -161,21 +162,9 @@ function Mason:HandleCanvasDrop()
     end
   end
   local x, y = self:GetCursorUIPosition()
-  if InCombatLockdown() then
-    ClearCursor()
-    local deferred = self:PlaceCursorAction(action, x, y)
-    if deferred then
-      print("Mason: queued until combat ends")
-    end
-    self:SyncDropCatcher()
-    return
-  end
-  local deferred = self:PlaceCursorAction(action, x, y)
+  self:PlaceCursorAction(action, x, y)
   ClearCursor()
   self:SyncDropCatcher()
-  if deferred then
-    print("Mason: queued until combat ends")
-  end
 end
 
 function Mason:CreateDropCatcher()
