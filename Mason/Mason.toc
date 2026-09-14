@@ -4,6 +4,17 @@
 ## Author: Adam Gray
 ## Version: 0.1.0-dev
 ## SavedVariables: MasonDB
-## OptionalDeps: Masque, Ace3
+## OptionalDeps: Ace3
+
+# Embedded Ace3 (AceAddon, AceDB, AceConsole) so Mason loads standalone.
+libs/LibStub/LibStub.lua
+libs/CallbackHandler-1.0/CallbackHandler-1.0.xml
+libs/AceAddon-3.0/AceAddon-3.0.xml
+libs/AceConsole-3.0/AceConsole-3.0.xml
+libs/AceDB-3.0/AceDB-3.0.xml
 
 Mason.lua
+Core/Queue.lua
+Core/DB.lua
+Executors/Executor.lua
+Executors/Binds.lua
