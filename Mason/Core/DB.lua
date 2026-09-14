@@ -5,6 +5,11 @@ local defaults = {
     nextPieceIndex = 1,
     specKits = {},
   },
+  char = {
+    locked = true,
+    gridSize = 32,
+    views = {},
+  },
 }
 
 function Mason:InitDB()
@@ -83,4 +88,44 @@ function Mason:FindPiece(id)
     end
   end
   return nil
+end
+
+function Mason:PieceLabel(piece)
+  if not piece then
+    return "?"
+  end
+  return piece.spellName or piece.macroName or (piece.itemID and tostring(piece.itemID)) or piece.id
+end
+
+function Mason:FindPieceByKey(key, specID)
+  if not key then
+    return nil
+  end
+  local want = string.upper(key)
+  for _, piece in pairs(self:GetKit(specID)) do
+    if piece.key and string.upper(piece.key) == want then
+      return piece
+    end
+  end
+  return nil
+end
+
+function Mason:FindPieceByAction(ptype, fields)
+  fields = fields or {}
+  for _, piece in pairs(self:GetKit()) do
+    if ptype == "spell" and piece.type == "spell" and piece.spellID == fields.spellID then
+      return piece
+    elseif ptype == "item" and piece.type == "item" and piece.itemID == fields.itemID then
+      return piece
+    elseif ptype == "macro" and piece.type == "macro" and piece.macroName == fields.macroName then
+      return piece
+    end
+  end
+  return nil
+end
+
+function Mason:GetViews()
+  local char = self.db.char
+  char.views = char.views or {}
+  return char.views
 end

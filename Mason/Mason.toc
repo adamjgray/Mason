@@ -18,3 +18,7 @@ Core/Queue.lua
 Core/DB.lua
 Executors/Executor.lua
 Executors/Binds.lua
+Canvas/View.lua
+Canvas/Layout.lua
+Canvas/DropCatcher.lua
+Canvas/EditMode.lua

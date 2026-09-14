@@ -25,6 +25,7 @@ end
 function Mason:ConfigureExecutor(exec, piece)
   local ptype = piece.type or "spell"
   exec:SetAttribute("type", ptype)
+  exec:SetAttribute("type2", "")
   if ptype == "spell" then
     exec:SetAttribute("spell", piece.spellID or piece.spellName)
   elseif ptype == "item" then
@@ -33,9 +34,6 @@ function Mason:ConfigureExecutor(exec, piece)
     exec:SetAttribute("macro", piece.macroName)
   end
   HonorKeyDownClicks(exec)
-  exec:EnableMouse(false)
-  exec:Hide()
-  exec:SetAlpha(0)
 end
 
 function Mason:EnsureExecutor(piece)
@@ -45,10 +43,33 @@ function Mason:EnsureExecutor(piece)
     exec = CreateFrame("Button", name, UIParent, "SecureActionButtonTemplate")
     exec:SetSize(1, 1)
     exec:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -2000, -2000)
+    exec:EnableMouse(false)
+    exec:Hide()
+    exec:SetAlpha(0)
   end
+  exec.masonPieceId = piece.id
   self.executors[piece.id] = exec
   self:ConfigureExecutor(exec, piece)
+  if self.WireExecutorView then
+    self:WireExecutorView(exec)
+  end
   return exec
+end
+
+function Mason:CrateExecutorVisual(id)
+  local exec = self.executors[id] or _G[self:ExecutorName(id)]
+  if not exec then
+    return
+  end
+  exec:EnableMouse(false)
+  exec:Hide()
+  exec:SetAlpha(0)
+  exec:ClearAllPoints()
+  exec:SetSize(1, 1)
+  exec:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -2000, -2000)
+  if self.HideEditHandle then
+    self:HideEditHandle(id)
+  end
 end
 
 function Mason:ParkExecutor(id)
@@ -60,8 +81,7 @@ function Mason:ParkExecutor(id)
   exec:SetAttribute("spell", nil)
   exec:SetAttribute("item", nil)
   exec:SetAttribute("macro", nil)
-  exec:EnableMouse(false)
-  exec:Hide()
+  self:CrateExecutorVisual(id)
 end
 
 function Mason:RefreshExecutorClicks()

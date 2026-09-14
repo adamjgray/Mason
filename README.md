@@ -1,5 +1,3 @@
-# Mason
+# Mason Phase 2 packet
 
-Additive action layer for WoW Retail. See SPEC/.
-
-Copy SPEC/ and AGENTS.md to the git repo root. Loadable addon code goes in Mason/.
+Replace SPEC/ files in the git root. Implement 02 only.

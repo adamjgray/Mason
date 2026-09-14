@@ -16,6 +16,9 @@ local USAGE = {
   "/mason list",
   "/mason clear",
   "/mason debug",
+  "/mason lock",
+  "/mason hide <key|id>",
+  "/mason grid <8-128>",
 }
 
 function Mason:OnInitialize()
@@ -26,9 +29,12 @@ end
 
 function Mason:OnEnable()
   self:CreateBindOwner()
+  self:CreateDropCatcher()
+  self:CreateEditMode()
   self:RegisterRuntimeEvents()
   self:QueueIfCombat(function()
     self:ApplyOverrides()
+    self:ApplyLayout()
   end)
 end
 
@@ -36,11 +42,13 @@ function Mason:RegisterRuntimeEvents()
   if self.eventFrame then
     return
   end
-  local frame = CreateFrame("Frame")
+  local frame = CreateFrame("Frame", "MasonEventFrame", UIParent)
   self.eventFrame = frame
-  frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-  frame:RegisterEvent("PLAYER_REGEN_ENABLED")
-  frame:RegisterEvent("CVAR_UPDATE")
+  frame:SetFrameStrata("BACKGROUND")
+  frame:EnableMouse(false)
+  frame:SetSize(1, 1)
+  frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+  frame:Show()
   frame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_SPECIALIZATION_CHANGED" then
       local unit = ...
@@ -49,9 +57,16 @@ function Mason:RegisterRuntimeEvents()
       end
       self:QueueIfCombat(function()
         self:ApplyOverrides()
+        self:ApplyLayout()
       end)
     elseif event == "PLAYER_REGEN_ENABLED" then
       self:FlushCombatQueue()
+    elseif event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_ENTERING_COMBAT" then
+      self:OnCombatLock()
+    elseif event == "CURSOR_CHANGED" then
+      if self.SyncDropCatcher then
+        self:SyncDropCatcher()
+      end
     elseif event == "CVAR_UPDATE" then
       local name = ...
       if name == "ActionButtonUseKeyDown" then
@@ -61,6 +76,17 @@ function Mason:RegisterRuntimeEvents()
       end
     end
   end)
+  frame:SetScript("OnUpdate", function()
+    if InCombatLockdown() and not self:IsLocked() then
+      self:OnCombatLock()
+    end
+  end)
+  frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+  frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+  frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+  frame:RegisterEvent("CVAR_UPDATE")
+  frame:RegisterEvent("CURSOR_CHANGED")
+  pcall(frame.RegisterEvent, frame, "PLAYER_ENTERING_COMBAT")
 end
 
 function Mason:PrintUsage()
@@ -136,20 +162,6 @@ local function FindPieceBySpell(pieces, spellID)
   return nil
 end
 
-local function FindPieceByKey(pieces, key)
-  local want = string.upper(key)
-  for _, piece in pairs(pieces) do
-    if piece.key and string.upper(piece.key) == want then
-      return piece
-    end
-  end
-  return nil
-end
-
-local function PieceLabel(piece)
-  return piece.spellName or piece.macroName or (piece.itemID and tostring(piece.itemID)) or piece.id
-end
-
 function Mason:OnChatCommand(input)
   input = strtrim(input or "")
   if input == "" then
@@ -208,7 +220,7 @@ function Mason:OnChatCommand(input)
     if string.match(token, "^p_%d+$") then
       piece = pieces[token]
     else
-      piece = FindPieceByKey(pieces, token)
+      piece = self:FindPieceByKey(token, specID)
     end
     if not piece then
       print("Mason: no piece for " .. token)
@@ -236,7 +248,7 @@ function Mason:OnChatCommand(input)
     end
     for i = 1, #rows do
       local piece = rows[i].piece
-      print(string.format("Mason: %s %s %s %s", piece.id, piece.type or "spell", PieceLabel(piece), piece.key or "-"))
+      print(string.format("Mason: %s %s %s %s", piece.id, piece.type or "spell", self:PieceLabel(piece), piece.key or "-"))
     end
     return
   end
@@ -256,12 +268,62 @@ function Mason:OnChatCommand(input)
       count = count + 1
     end
     print(string.format(
-      "Mason: specID=%s pieces=%d keyDown=%s combat=%s",
+      "Mason: specID=%s pieces=%d keyDown=%s combat=%s locked=%s",
       tostring(specID),
       count,
       tostring(not not GetCVarBool("ActionButtonUseKeyDown")),
-      tostring(not not InCombatLockdown())
+      tostring(not not InCombatLockdown()),
+      tostring(self:IsLocked())
     ))
+    return
+  end
+
+  if cmd == "lock" then
+    if InCombatLockdown() and self:IsLocked() then
+      print("Mason: cannot unlock in combat")
+      return
+    end
+    local locked = not self:IsLocked()
+    local deferred = self:SetLocked(locked)
+    self:Notify(locked and "locked" or "unlocked")
+    if deferred then
+      print("Mason: queued until combat ends")
+    end
+    return
+  end
+
+  if cmd == "hide" then
+    local token = strtrim(rest)
+    if token == "" then
+      print("Mason: usage: /mason hide <key|id>")
+      return
+    end
+    local specID = self:GetCurrentSpecID()
+    local pieces = self:GetKit(specID)
+    local piece
+    if string.match(token, "^p_%d+$") then
+      piece = pieces[token]
+    else
+      piece = self:FindPieceByKey(token, specID)
+    end
+    if not piece then
+      print("Mason: no piece for " .. token)
+      return
+    end
+    local deferred = self:ClearView(piece.id)
+    if deferred then
+      print("Mason: queued until combat ends")
+    end
+    return
+  end
+
+  if cmd == "grid" then
+    local pixels = tonumber(strtrim(rest))
+    if not pixels or not self:SetGridSize(pixels) then
+      print("Mason: usage: /mason grid <8-128>")
+      return
+    end
+    print("Mason: grid " .. tostring(self:GetGridSize()))
     return
   end
 

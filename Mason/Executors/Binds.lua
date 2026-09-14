@@ -82,6 +82,10 @@ function Mason:DeletePiece(id)
   end
   local kit = self:GetSpecKit(specID)
   kit.pieces[id] = nil
+  local views = self.db.char and self.db.char.views
+  if views then
+    views[id] = nil
+  end
   return self:QueueIfCombat(function()
     self:ParkExecutor(id)
     self:ApplyOverrides()
@@ -97,6 +101,10 @@ function Mason:ClearCurrentKit()
   for id in pairs(kit.pieces) do
     ids[#ids + 1] = id
     kit.pieces[id] = nil
+    local views = self.db.char and self.db.char.views
+    if views then
+      views[id] = nil
+    end
   end
   return self:QueueIfCombat(function()
     for i = 1, #ids do
@@ -120,5 +128,8 @@ function Mason:ApplyOverrides()
     if piece.key and piece.key ~= "" then
       SetOverrideBindingClick(owner, false, piece.key, self:ExecutorName(piece.id), "LeftButton")
     end
+  end
+  if self.ApplyLayout then
+    self:ApplyLayout()
   end
 end
