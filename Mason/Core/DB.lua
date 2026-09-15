@@ -110,6 +110,37 @@ function Mason:FindPieceByKey(key, specID)
   return nil
 end
 
+function Mason:FindPieceBySpellToken(token, specID)
+  if not token or token == "" then
+    return nil
+  end
+  local numeric = tonumber(token)
+  local want = string.lower(token)
+  for _, piece in pairs(self:GetKit(specID)) do
+    if piece.type == "spell" then
+      if numeric and piece.spellID == numeric then
+        return piece
+      end
+      if piece.spellName and string.lower(piece.spellName) == want then
+        return piece
+      end
+    end
+  end
+  return nil
+end
+
+function Mason:ResolvePieceToken(token, specID)
+  token = strtrim(token or "")
+  if token == "" then
+    return nil
+  end
+  local pieces = self:GetKit(specID)
+  if string.match(token, "^p_%d+$") then
+    return pieces[token]
+  end
+  return self:FindPieceByKey(token, specID) or self:FindPieceBySpellToken(token, specID)
+end
+
 function Mason:FindPieceByAction(ptype, fields)
   fields = fields or {}
   for _, piece in pairs(self:GetKit()) do

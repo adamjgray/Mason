@@ -100,6 +100,42 @@ function Mason:RedrawEditGrid()
   end
 end
 
+function Mason:LayoutEditHandle(id, x, y)
+  local handle = self.editHandles and self.editHandles[id]
+  if not handle then
+    return
+  end
+  local view = self:GetViews()[id]
+  if x == nil or y == nil then
+    if view then
+      x, y = view.x, view.y
+    end
+  end
+  if x == nil or y == nil then
+    return
+  end
+  local s0 = (self.GetFaceNativeSize and self:GetFaceNativeSize()) or 45
+  local scale = (view and view.scale) or 1
+  handle:SetScale(1)
+  handle:SetSize(s0 * scale, s0 * scale)
+  handle:ClearAllPoints()
+  handle:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+end
+
+function Mason:DragExecutorToCursor(id)
+  if InCombatLockdown() then
+    return
+  end
+  local x, y = self:GetCursorUIPosition()
+  self.dragX, self.dragY = x, y
+  local exec = self.executors and self.executors[id]
+  if exec then
+    exec:ClearAllPoints()
+    exec:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+  end
+  self:LayoutEditHandle(id, x, y)
+end
+
 function Mason:EnsureEditHandle(id, exec)
   self.editHandles = self.editHandles or {}
   local sanitized = tostring(id):gsub("[^%w_]", "_")
@@ -107,8 +143,7 @@ function Mason:EnsureEditHandle(id, exec)
   local handle = self.editHandles[id] or _G[name]
   if not handle then
     handle = CreateFrame("Button", name, UIParent)
-    handle:RegisterForDrag("LeftButton")
-    handle:RegisterForClicks("AnyUp")
+    handle:RegisterForClicks("AnyDown", "AnyUp")
     local overlay = handle:CreateTexture(nil, "BACKGROUND")
     overlay:SetAllPoints(handle)
     overlay:SetColorTexture(1, 1, 1, 0.12)
@@ -125,37 +160,46 @@ function Mason:EnsureEditHandle(id, exec)
       end
     end)
     handle.xbtn = xbtn
-    handle:SetScript("OnDragStart", function(h)
-      if not Mason:InEditMode() then
-        return
-      end
-      local button = h.executor
-      if not button then
-        return
-      end
-      Mason.dragId = h.pieceId
-      button:SetMovable(true)
-      button:StartMoving()
-    end)
-    handle:SetScript("OnDragStop", function(h)
-      local button = h.executor
-      if button and not InCombatLockdown() then
-        button:StopMovingOrSizing()
-      end
+    local function stopDrag(h)
+      h.masonDragging = false
       local dragId = h.pieceId
       Mason.dragId = nil
       if dragId then
         Mason:CommitViewPosition(dragId)
       end
+    end
+    handle:SetScript("OnMouseDown", function(h, button)
+      if button ~= "LeftButton" or not Mason:InEditMode() or InCombatLockdown() then
+        return
+      end
+      if not h.executor then
+        return
+      end
+      Mason.dragId = h.pieceId
+      h.masonDragging = true
+      Mason:DragExecutorToCursor(h.pieceId)
     end)
     handle:SetScript("OnMouseUp", function(h, button)
       if button == "RightButton" and h.pieceId and Mason:InEditMode() then
         Mason:ClearView(h.pieceId)
+        return
+      end
+      if button == "LeftButton" and h.masonDragging then
+        stopDrag(h)
+      end
+    end)
+    handle:SetScript("OnHide", function(h)
+      if h.masonDragging then
+        stopDrag(h)
       end
     end)
     handle:SetScript("OnUpdate", function(h)
-      if h.executor and h:IsShown() then
-        h:SetAllPoints(h.executor)
+      if h.masonDragging and h.pieceId then
+        Mason:DragExecutorToCursor(h.pieceId)
+        return
+      end
+      if h.pieceId and h:IsShown() then
+        Mason:LayoutEditHandle(h.pieceId)
       end
     end)
     self.editHandles[id] = handle
@@ -203,10 +247,10 @@ function Mason:SyncEditHandle(id)
     return
   end
   local handle = self:EnsureEditHandle(id, exec)
-  handle:SetAllPoints(exec)
+  self:LayoutEditHandle(id)
   handle:SetFrameStrata("DIALOG")
   local level = exec:GetFrameLevel()
-  handle:SetFrameLevel((level or 0) + 8)
+  handle:SetFrameLevel((level or 0) + 20)
   handle:Show()
   local mouse = not self:CursorHoldsAcceptedType()
   handle:EnableMouse(mouse)

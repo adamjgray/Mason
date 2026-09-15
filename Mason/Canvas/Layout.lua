@@ -43,20 +43,14 @@ function Mason:WriteViewLayout(id, x, y)
 end
 
 function Mason:CommitViewPosition(id)
-  local exec = self.executors[id] or _G[self:ExecutorName(id)]
-  if not exec then
-    return
+  local x, y = self.dragX, self.dragY
+  if x == nil or y == nil then
+    x, y = self:GetCursorUIPosition()
   end
-  local cx, cy = exec:GetCenter()
-  if not cx then
-    return
-  end
-  local uis = UIParent:GetEffectiveScale()
-  local es = exec:GetEffectiveScale()
-  local x, y = cx * es / uis, cy * es / uis
   if self.SnapToGrid then
     x, y = self:SnapToGrid(x, y)
   end
+  self.dragX, self.dragY = nil, nil
   self:WriteViewLayout(id, x, y)
   if InCombatLockdown() then
     self:QueueIfCombat(function()
@@ -91,16 +85,30 @@ function Mason:PlaceView(id, x, y)
 
   return self:QueueIfCombat(function()
     local exec = self:EnsureExecutor(piece)
-    exec:StopMovingOrSizing()
+    exec:SetParent(UIParent)
     exec:ClearAllPoints()
-    exec:SetSize(36, 36)
-    exec:SetScale(view.scale)
+    local s0 = (self.GetFaceNativeSize and self:GetFaceNativeSize()) or 45
+    exec:SetSize(s0, s0)
+    exec:SetScale(view.scale or 1)
     exec:SetPoint(view.point, UIParent, view.relPoint, view.x, view.y)
     exec:SetAlpha(1)
     exec:Show()
     exec:EnableMouse(true)
     exec:SetMovable(false)
     self:PaintView(exec, piece)
+    exec:SetParent(UIParent)
+    exec:SetAlpha(1)
+    exec:Show()
+    if self.FitFace then
+      self:FitFace(exec)
+    end
+    if self.OnAssistedSpellSignal then
+      self:OnAssistedSpellSignal()
+    end
+    if self.UpdateAssistedHighlight then
+      self:UpdateAssistedHighlight(exec)
+    end
+    print("Mason: PlaceView", id, exec:IsShown(), exec:GetWidth())
     if self:InEditMode() then
       exec:SetMovable(true)
       if self.SyncEditHandle then
@@ -110,6 +118,29 @@ function Mason:PlaceView(id, x, y)
       self:HideEditHandle(id)
     end
   end)
+end
+
+function Mason:ShowView(id)
+  local piece = self:FindPiece(id)
+  if not piece then
+    return false
+  end
+  local view = self:GetViews()[id]
+  if view and (view.x ~= nil) and (view.y ~= nil) then
+    local deferred = self:PlaceView(id)
+    self:Notify("shown " .. self:PieceLabel(piece))
+    return deferred
+  end
+  local x, y
+  if not InCombatLockdown() and self.GetCursorUIPosition then
+    x, y = self:GetCursorUIPosition()
+  else
+    x = (UIParent:GetWidth() or 0) / 2
+    y = (UIParent:GetHeight() or 0) / 2
+  end
+  local deferred = self:PlaceView(id, x, y)
+  self:Notify("shown " .. self:PieceLabel(piece))
+  return deferred
 end
 
 function Mason:ClearView(id)
@@ -153,13 +184,20 @@ function Mason:ApplyLayout()
   if self.RefreshEditMode then
     self:RefreshEditMode()
   end
+  if self.OnAssistedSpellSignal then
+    self:OnAssistedSpellSignal()
+  end
 end
 
 function Mason:OnCombatLock()
   local id = self.dragId
   if id then
-    local x, y = self:GetCursorUIPosition()
+    local x, y = self.dragX, self.dragY
+    if x == nil or y == nil then
+      x, y = self:GetCursorUIPosition()
+    end
     self.dragId = nil
+    self.dragX, self.dragY = nil, nil
     if self.SnapToGrid then
       x, y = self:SnapToGrid(x, y)
     end

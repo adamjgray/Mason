@@ -17,7 +17,8 @@ local USAGE = {
   "/mason clear",
   "/mason debug",
   "/mason lock",
-  "/mason hide <key|id>",
+  "/mason hide <key|id|spell>",
+  "/mason show <key|id|spell>",
   "/mason grid <8-128>",
 }
 
@@ -67,6 +68,10 @@ function Mason:RegisterRuntimeEvents()
       if self.SyncDropCatcher then
         self:SyncDropCatcher()
       end
+    elseif event == "ASSISTED_COMBAT_ACTION_SPELL_CAST" then
+      if self.OnAssistedSpellSignal then
+        self:OnAssistedSpellSignal()
+      end
     elseif event == "CVAR_UPDATE" then
       local name = ...
       if name == "ActionButtonUseKeyDown" then
@@ -76,9 +81,12 @@ function Mason:RegisterRuntimeEvents()
       end
     end
   end)
-  frame:SetScript("OnUpdate", function()
+  frame:SetScript("OnUpdate", function(_, elapsed)
     if InCombatLockdown() and not self:IsLocked() then
       self:OnCombatLock()
+    end
+    if self.PollAssistedHighlight then
+      self:PollAssistedHighlight(elapsed)
     end
   end)
   frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
@@ -87,6 +95,7 @@ function Mason:RegisterRuntimeEvents()
   frame:RegisterEvent("CVAR_UPDATE")
   frame:RegisterEvent("CURSOR_CHANGED")
   pcall(frame.RegisterEvent, frame, "PLAYER_ENTERING_COMBAT")
+  pcall(frame.RegisterEvent, frame, "ASSISTED_COMBAT_ACTION_SPELL_CAST")
 end
 
 function Mason:PrintUsage()
@@ -268,13 +277,33 @@ function Mason:OnChatCommand(input)
       count = count + 1
     end
     print(string.format(
-      "Mason: specID=%s pieces=%d keyDown=%s combat=%s locked=%s",
+      "Mason: specID=%s pieces=%d keyDown=%s combat=%s locked=%s masque=%s lab=%s",
       tostring(specID),
       count,
       tostring(not not GetCVarBool("ActionButtonUseKeyDown")),
       tostring(not not InCombatLockdown()),
-      tostring(self:IsLocked())
+      tostring(self:IsLocked()),
+      (LibStub("Masque", true) and "yes" or "no"),
+      (LibStub("LibActionButton-1.0", true) and "yes" or "no")
     ))
+    for id, view in pairs(self:GetViews()) do
+      if view.visible then
+        local exec = self.executors and self.executors[id]
+        if exec then
+          local s0 = self.GetFaceNativeSize and self:GetFaceNativeSize() or 45
+          local scale = self.GetFaceScale and self:GetFaceScale(exec) or (view.scale or 1)
+          print(string.format(
+            "Mason: debug face %s S0=%.1f scale=%.3f buttonW=%.1f effectiveScale=%.3f",
+            tostring(id),
+            s0,
+            scale,
+            exec:GetWidth() or 0,
+            exec:GetEffectiveScale() or 0
+          ))
+          break
+        end
+      end
+    end
     return
   end
 
@@ -295,22 +324,33 @@ function Mason:OnChatCommand(input)
   if cmd == "hide" then
     local token = strtrim(rest)
     if token == "" then
-      print("Mason: usage: /mason hide <key|id>")
+      print("Mason: usage: /mason hide <key|id|spell>")
       return
     end
-    local specID = self:GetCurrentSpecID()
-    local pieces = self:GetKit(specID)
-    local piece
-    if string.match(token, "^p_%d+$") then
-      piece = pieces[token]
-    else
-      piece = self:FindPieceByKey(token, specID)
-    end
+    local piece = self:ResolvePieceToken(token)
     if not piece then
       print("Mason: no piece for " .. token)
       return
     end
     local deferred = self:ClearView(piece.id)
+    if deferred then
+      print("Mason: queued until combat ends")
+    end
+    return
+  end
+
+  if cmd == "show" then
+    local token = strtrim(rest)
+    if token == "" then
+      print("Mason: usage: /mason show <key|id|spell>")
+      return
+    end
+    local piece = self:ResolvePieceToken(token)
+    if not piece then
+      print("Mason: no piece for " .. token)
+      return
+    end
+    local deferred = self:ShowView(piece.id)
     if deferred then
       print("Mason: queued until combat ends")
     end

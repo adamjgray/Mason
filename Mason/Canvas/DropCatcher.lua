@@ -91,14 +91,18 @@ function Mason:SyncDropCatcher()
   if self:CursorHoldsAcceptedType() then
     catcher:SetFrameStrata("FULLSCREEN_DIALOG")
     catcher:Show()
+    if not catcher:IsMouseEnabled() then
+      print("Mason: drop catcher mouse on")
+    end
     catcher:EnableMouse(true)
     if self.SetEditHandlesMouse then
       self:SetEditHandlesMouse(false)
     end
   else
     catcher:EnableMouse(false)
-    catcher:Hide()
-    catcher:SetFrameStrata("HIGH")
+    catcher:Show()
+    catcher:SetFrameStrata("BACKGROUND")
+    catcher:SetFrameLevel(0)
     if self.InEditMode and self:InEditMode() and self.SetEditHandlesMouse then
       self:SetEditHandlesMouse(true)
     end
@@ -176,7 +180,7 @@ function Mason:CreateDropCatcher()
   catcher:SetFrameStrata("HIGH")
   catcher:SetFrameLevel(0)
   catcher:EnableMouse(false)
-  catcher:Hide()
+  catcher:Show()
   catcher:SetScript("OnReceiveDrag", function()
     Mason:HandleCanvasDrop()
   end)
