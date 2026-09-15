@@ -28,7 +28,7 @@ function Mason:ConfigureExecutor(exec, piece)
   exec:SetAttribute("type2", "")
   if ptype == "spell" then
     exec:SetAttribute("spell", piece.spellID or piece.spellName)
-  elseif ptype == "item" then
+  elseif ptype == "item" or ptype == "toy" then
     exec:SetAttribute("item", piece.itemID)
   elseif ptype == "macro" then
     exec:SetAttribute("macro", piece.macroName)

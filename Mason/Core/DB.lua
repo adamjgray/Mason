@@ -7,6 +7,7 @@ local defaults = {
   },
   char = {
     locked = true,
+    snap = true,
     gridSize = 32,
     views = {},
   },
@@ -146,7 +147,7 @@ function Mason:FindPieceByAction(ptype, fields)
   for _, piece in pairs(self:GetKit()) do
     if ptype == "spell" and piece.type == "spell" and piece.spellID == fields.spellID then
       return piece
-    elseif ptype == "item" and piece.type == "item" and piece.itemID == fields.itemID then
+    elseif (ptype == "item" or ptype == "toy") and (piece.type == "item" or piece.type == "toy") and piece.itemID == fields.itemID then
       return piece
     elseif ptype == "macro" and piece.type == "macro" and piece.macroName == fields.macroName then
       return piece

@@ -48,7 +48,9 @@ function Mason:CommitViewPosition(id)
     x, y = self:GetCursorUIPosition()
   end
   if self.SnapToGrid then
-    x, y = self:SnapToGrid(x, y)
+    local view = self:GetViews()[id]
+    local scale = (view and view.scale) or 1
+    x, y = self:SnapToGrid(x, y, scale)
   end
   self.dragX, self.dragY = nil, nil
   self:WriteViewLayout(id, x, y)
@@ -199,7 +201,9 @@ function Mason:OnCombatLock()
     self.dragId = nil
     self.dragX, self.dragY = nil, nil
     if self.SnapToGrid then
-      x, y = self:SnapToGrid(x, y)
+      local view = self:GetViews()[id]
+      local scale = (view and view.scale) or 1
+      x, y = self:SnapToGrid(x, y, scale)
     end
     self:WriteViewLayout(id, x, y)
   end
@@ -208,3 +212,197 @@ function Mason:OnCombatLock()
   end
   self:SetLocked(true)
 end
+
+local ACTION_SLOT_MAX = 180
+
+function Mason:SnapshotActionSlots()
+  local snap = {}
+  if not GetActionInfo then
+    return snap
+  end
+  for slot = 1, ACTION_SLOT_MAX do
+    local a, b, c = GetActionInfo(slot)
+    snap[slot] = tostring(a) .. "\0" .. tostring(b) .. "\0" .. tostring(c)
+  end
+  return snap
+end
+
+function Mason:SlotHoldsPiece(slot, piece)
+  if not GetActionInfo or not piece then
+    return false
+  end
+  local atype, id, subType = GetActionInfo(slot)
+  if not atype then
+    return false
+  end
+  local ptype = piece.type or "spell"
+  if ptype == "spell" and atype == "spell" then
+    if self.SpellIDsMatch then
+      return self:SpellIDsMatch(id, piece.spellID)
+    end
+    return id == piece.spellID
+  end
+  if (ptype == "item" or ptype == "toy") and (atype == "item" or atype == "toy") then
+    return id == piece.itemID
+  end
+  if ptype == "macro" and atype == "macro" then
+    if type(id) == "string" and piece.macroName then
+      return id == piece.macroName
+    end
+    if GetMacroInfo and piece.macroName then
+      local name = GetMacroInfo(id)
+      return name == piece.macroName
+    end
+  end
+  return false
+end
+
+function Mason:AnySlotHoldsPiece(piece)
+  if not piece or not GetActionInfo then
+    return false
+  end
+  for slot = 1, ACTION_SLOT_MAX do
+    if self:SlotHoldsPiece(slot, piece) then
+      return true
+    end
+  end
+  return false
+end
+
+function Mason:ActionSlotsTookPiece(snapshot, piece)
+  if not snapshot or not piece or not GetActionInfo then
+    return false
+  end
+  for slot = 1, ACTION_SLOT_MAX do
+    local a, b, c = GetActionInfo(slot)
+    local cur = tostring(a) .. "\0" .. tostring(b) .. "\0" .. tostring(c)
+    if snapshot[slot] ~= cur and self:SlotHoldsPiece(slot, piece) then
+      return true
+    end
+  end
+  return false
+end
+
+function Mason:ClearMasonPickup()
+  self.masonPickupId = nil
+  self.masonPickupSnapshot = nil
+  self.masonPickupSlotChanged = nil
+  self.masonPickupSawCursor = nil
+  self.masonPickupEmptyArmed = nil
+end
+
+function Mason:AcceptMasonPickup()
+  local id = self.masonPickupId
+  self:ClearMasonPickup()
+  if id then
+    self:ClearView(id)
+  end
+end
+
+function Mason:OnMasonPickupSlotChanged()
+  if not self.masonPickupId then
+    return
+  end
+  self.masonPickupSlotChanged = true
+  if not GetCursorInfo() then
+    self:AcceptMasonPickup()
+  end
+end
+
+function Mason:PollMasonPickup()
+  local id = self.masonPickupId
+  if not id then
+    return
+  end
+  if GetCursorInfo() then
+    self.masonPickupSawCursor = true
+    self.masonPickupEmptyArmed = nil
+    return
+  end
+  if not self.masonPickupSawCursor then
+    return
+  end
+  if self.masonPickupSlotChanged then
+    self:AcceptMasonPickup()
+    return
+  end
+  local piece = self:FindPiece(id)
+  if piece and self:ActionSlotsTookPiece(self.masonPickupSnapshot, piece) then
+    self:AcceptMasonPickup()
+    return
+  end
+  if not self.masonPickupEmptyArmed then
+    self.masonPickupEmptyArmed = true
+    return
+  end
+  if piece and self:AnySlotHoldsPiece(piece) then
+    self:AcceptMasonPickup()
+    return
+  end
+  self:ClearMasonPickup()
+end
+
+function Mason:StartLockedPickup(id)
+  if InCombatLockdown() or not self:IsLocked() then
+    return
+  end
+  local piece = self:FindPiece(id)
+  if not piece then
+    return
+  end
+  local view = self:GetViews()[id]
+  if not view or not view.visible then
+    return
+  end
+  local ptype = piece.type or "spell"
+  if ptype == "spell" then
+    local spell = piece.spellID or piece.spellName
+    if C_Spell and C_Spell.PickupSpell then
+      C_Spell.PickupSpell(spell)
+    elseif PickupSpell then
+      PickupSpell(spell)
+    end
+  elseif ptype == "macro" then
+    local index = piece.macroName
+    if GetMacroIndexByName and piece.macroName then
+      local macroIndex = GetMacroIndexByName(piece.macroName)
+      if macroIndex and macroIndex > 0 then
+        index = macroIndex
+      end
+    end
+    if PickupMacro then
+      PickupMacro(index)
+    end
+  else
+    local itemID = piece.itemID
+    local isToy = ptype == "toy" or (self.PieceIsToy and self:PieceIsToy(piece))
+    if isToy and C_ToyBox and C_ToyBox.PickupToyBoxItem and itemID then
+      C_ToyBox.PickupToyBoxItem(itemID)
+    elseif C_Item and C_Item.PickupItem and itemID then
+      C_Item.PickupItem(itemID)
+    elseif PickupItem and itemID then
+      PickupItem(itemID)
+    end
+  end
+  self.masonPickupId = id
+  self.masonPickupSlotChanged = nil
+  self.masonPickupEmptyArmed = nil
+  self.masonPickupSawCursor = not not GetCursorInfo()
+  self.masonPickupSnapshot = self:SnapshotActionSlots()
+end
+
+function Mason:WireLockedPickup(exec)
+  if not exec or exec.masonPickupWired then
+    return
+  end
+  exec.masonPickupWired = true
+  if exec.RegisterForDrag then
+    exec:RegisterForDrag("LeftButton")
+  end
+  exec:HookScript("OnDragStart", function(self)
+    if Mason.StartLockedPickup then
+      Mason:StartLockedPickup(self.masonPieceId)
+    end
+  end)
+end
+

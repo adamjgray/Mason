@@ -30,9 +30,55 @@ function Mason:SetGridSize(pixels)
   return true
 end
 
-function Mason:SnapToGrid(x, y)
+function Mason:IsSnapEnabled()
+  if not self.db or not self.db.char then
+    return true
+  end
+  if self.db.char.snap == nil then
+    return true
+  end
+  return not not self.db.char.snap
+end
+
+function Mason:SetSnapEnabled(enabled)
+  self.db.char.snap = not not enabled
+  return self.db.char.snap
+end
+
+function Mason:SnapToGrid(x, y, scale)
+  if not self:IsSnapEnabled() then
+    return x, y
+  end
   local g = self:GetGridSize()
-  return math.floor(x / g + 0.5) * g, math.floor(y / g + 0.5) * g
+  scale = tonumber(scale) or 1
+  local s0 = (self.GetFaceNativeSize and self:GetFaceNativeSize()) or 45
+  local half = (s0 * scale) / 2
+  local offsets = {
+    { 0, 0 },
+    { 0, half },
+    { 0, -half },
+    { half, 0 },
+    { -half, 0 },
+    { half, half },
+    { half, -half },
+    { -half, half },
+    { -half, -half },
+  }
+  local bestErr, bestX, bestY
+  for i = 1, #offsets do
+    local ox, oy = offsets[i][1], offsets[i][2]
+    local px, py = x + ox, y + oy
+    local gx = math.floor(px / g + 0.5) * g
+    local gy = math.floor(py / g + 0.5) * g
+    local dx, dy = gx - px, gy - py
+    local err = dx * dx + dy * dy
+    if not bestErr or err < bestErr then
+      bestErr = err
+      bestX = gx - ox
+      bestY = gy - oy
+    end
+  end
+  return bestX, bestY
 end
 
 function Mason:CreateEditMode()

@@ -129,6 +129,173 @@ function Mason:HookFaceRange(exec)
   end
 end
 
+function Mason:PieceIsToy(piece)
+  if not piece then
+    return false
+  end
+  if piece.type == "toy" then
+    return true
+  end
+  local id = piece.itemID
+  if not id then
+    return false
+  end
+  if PlayerHasToy and PlayerHasToy(id) then
+    return true
+  end
+  if C_ToyBox then
+    if C_ToyBox.GetToyFromItemID then
+      local toyID = C_ToyBox.GetToyFromItemID(id)
+      if toyID and toyID ~= 0 then
+        return true
+      end
+    end
+    if C_ToyBox.GetToyInfo then
+      local info = C_ToyBox.GetToyInfo(id)
+      if info then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+function Mason:ItemStackCount(itemID)
+  if not itemID then
+    return 0
+  end
+  if C_Item and C_Item.GetItemCount then
+    return C_Item.GetItemCount(itemID) or 0
+  end
+  if GetItemCount then
+    return GetItemCount(itemID) or 0
+  end
+  return 0
+end
+
+function Mason:ToyIsUsable(itemID)
+  if not itemID then
+    return false
+  end
+  if PlayerHasToy and not PlayerHasToy(itemID) then
+    return false
+  end
+  if C_ToyBox and C_ToyBox.IsToyUsable then
+    return not not C_ToyBox.IsToyUsable(itemID)
+  end
+  return true
+end
+
+function Mason:ApplyFaceTypeOverrides(exec, piece)
+  if not exec then
+    return
+  end
+  piece = piece or (exec.masonPieceId and self:FindPiece(exec.masonPieceId))
+  if not piece then
+    return
+  end
+  local ptype = piece.type or "spell"
+  if ptype == "macro" then
+    exec.IsUsable = function()
+      return true, false
+    end
+    exec.IsUnitInRange = function()
+      return nil
+    end
+    exec.outOfRange = false
+    if exec.icon then
+      exec.icon:SetVertexColor(1, 1, 1)
+      if exec.icon.SetDesaturated then
+        exec.icon:SetDesaturated(false)
+      end
+    end
+    return
+  end
+  if ptype == "item" or ptype == "toy" then
+    local itemID = piece.itemID
+    local isToy = ptype == "toy" or self:PieceIsToy(piece)
+    if isToy then
+      exec.GetCount = function()
+        return 0
+      end
+      exec.IsConsumableOrStackable = function()
+        return false
+      end
+      exec.GetDisplayCount = function()
+        return ""
+      end
+      exec.IsUsable = function()
+        return Mason:ToyIsUsable(itemID), false
+      end
+      exec.IsUnitInRange = function()
+        return nil
+      end
+      exec.outOfRange = false
+      if exec.icon then
+        if self:ToyIsUsable(itemID) then
+          exec.icon:SetVertexColor(1, 1, 1)
+        else
+          exec.icon:SetVertexColor(0.4, 0.4, 0.4)
+        end
+        if exec.icon.SetDesaturated then
+          exec.icon:SetDesaturated(false)
+        end
+      end
+    else
+      exec.GetCount = function()
+        return Mason:ItemStackCount(itemID)
+      end
+      exec.IsConsumableOrStackable = function()
+        return true
+      end
+      exec.GetDisplayCount = function(self)
+        local count = self:GetCount() or 0
+        if count > (self.maxDisplayCount or 9999) then
+          return "*"
+        end
+        return count
+      end
+    end
+    self:UpdatePieceCount(exec, piece)
+  end
+end
+
+function Mason:UpdatePieceCount(exec, piece)
+  if not exec or not exec.Count then
+    return
+  end
+  piece = piece or (exec.masonPieceId and self:FindPiece(exec.masonPieceId))
+  if not piece then
+    return
+  end
+  if piece.type == "toy" or self:PieceIsToy(piece) then
+    exec.Count:SetText("")
+    exec.Count:Hide()
+    return
+  end
+  if piece.type ~= "item" then
+    return
+  end
+  if not SHOW_COUNT then
+    exec.Count:Hide()
+    return
+  end
+  local count = self:ItemStackCount(piece.itemID)
+  if count > (exec.maxDisplayCount or 9999) then
+    exec.Count:SetText("*")
+  else
+    exec.Count:SetText(tostring(count))
+  end
+  exec.Count:Show()
+end
+
+function Mason:RefreshItemCounts()
+  for _, exec in pairs(self.executors or {}) do
+    self:UpdatePieceCount(exec)
+  end
+end
+
+
 function Mason:SpellIDsMatch(a, b)
   if not a or not b then
     return false
@@ -370,6 +537,8 @@ function Mason:RegisterFaceCallbacks()
       end
       Mason:StripSlotArt(button)
       Mason:FitFace(button)
+      Mason:HookFaceRange(button)
+      Mason:ApplyFaceTypeOverrides(button)
       Mason:UpdateAssistedHighlight(button)
     end
     LAB.RegisterCallback(self, "OnButtonUpdate", function(_, button)
@@ -401,7 +570,7 @@ function Mason:ConfigureFace(exec, piece)
   local ptype = piece.type or "spell"
   if ptype == "spell" then
     exec:SetState("0", "spell", piece.spellID or piece.spellName)
-  elseif ptype == "item" then
+  elseif ptype == "item" or ptype == "toy" then
     exec:SetState("0", "item", piece.itemID)
   elseif ptype == "macro" then
     exec:SetState("0", "macro", piece.macroName)
@@ -444,6 +613,10 @@ function Mason:ConfigureFace(exec, piece)
     exec:UpdateAction(true)
   end
   self:HookFaceRange(exec)
+  self:ApplyFaceTypeOverrides(exec, piece)
+  if self.WireLockedPickup then
+    self:WireLockedPickup(exec)
+  end
   self:StripSlotArt(exec)
   self:FitFace(exec)
   self:UpdateAssistedHighlight(exec)
@@ -496,6 +669,9 @@ function Mason:EnsureExecutor(piece)
       self:ConfigureFace(exec, piece)
     else
       self:ConfigureExecutor(exec, piece)
+      if self.WireLockedPickup then
+        self:WireLockedPickup(exec)
+      end
     end
     if self.WireExecutorView then
       self:WireExecutorView(exec)
@@ -515,6 +691,9 @@ function Mason:EnsureExecutor(piece)
     self:ConfigureExecutor(exec, piece)
     if self.WireExecutorView then
       self:WireExecutorView(exec)
+    end
+    if self.WireLockedPickup then
+      self:WireLockedPickup(exec)
     end
     return exec
   end
@@ -555,7 +734,7 @@ function Mason:PaintView(exec, piece)
   local tex = 134400
   if ptype == "spell" and C_Spell and C_Spell.GetSpellTexture then
     tex = C_Spell.GetSpellTexture(piece.spellID or piece.spellName) or tex
-  elseif ptype == "item" and piece.itemID and C_Item and C_Item.GetItemIconByID then
+  elseif (ptype == "item" or ptype == "toy") and piece.itemID and C_Item and C_Item.GetItemIconByID then
     tex = C_Item.GetItemIconByID(piece.itemID) or tex
   elseif ptype == "macro" and piece.macroName and GetMacroInfo then
     tex = select(2, GetMacroInfo(piece.macroName)) or tex

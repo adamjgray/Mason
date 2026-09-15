@@ -58,6 +58,21 @@ function Mason:ParseCursorAction()
       spellName = name,
     }
   end
+  if infoType == "toy" then
+    local itemID = a
+    if type(itemID) ~= "number" then
+      return nil, "unknown"
+    end
+    local name
+    if C_ToyBox and C_ToyBox.GetToyInfo then
+      name = C_ToyBox.GetToyInfo(itemID)
+    end
+    return {
+      type = "toy",
+      itemID = itemID,
+      spellName = name,
+    }
+  end
   if infoType == "macro" then
     local index = a
     if not GetMacroInfo then
@@ -80,7 +95,24 @@ function Mason:CursorHoldsAcceptedType()
     return false
   end
   local infoType = GetCursorInfo()
-  return infoType == "spell" or infoType == "item" or infoType == "macro"
+  return infoType == "spell" or infoType == "item" or infoType == "macro" or infoType == "toy"
+end
+
+function Mason:CursorShouldArmCatcher()
+  if self.masonPickupId then
+    return false
+  end
+  if not GetCursorInfo then
+    return false
+  end
+  local infoType = GetCursorInfo()
+  if infoType == "spell" or infoType == "macro" then
+    return true
+  end
+  if infoType == "item" or infoType == "toy" then
+    return not self:IsLocked()
+  end
+  return false
 end
 
 function Mason:SyncDropCatcher()
@@ -88,7 +120,7 @@ function Mason:SyncDropCatcher()
   if not catcher then
     return
   end
-  if self:CursorHoldsAcceptedType() then
+  if self:CursorShouldArmCatcher() then
     catcher:SetFrameStrata("FULLSCREEN_DIALOG")
     catcher:Show()
     if not catcher:IsMouseEnabled() then
@@ -128,6 +160,11 @@ function Mason:PlaceCursorAction(action, x, y)
     print("Mason: could not create piece")
     return false
   end
+  if self.SnapToGrid then
+    local view = self:GetViews()[piece.id]
+    local scale = (view and view.scale) or 1
+    x, y = self:SnapToGrid(x, y, scale)
+  end
   self:WriteViewLayout(piece.id, x, y)
   local msg = "placed " .. self:PieceLabel(piece)
   self:PlaceView(piece.id, x, y)
@@ -165,6 +202,9 @@ function Mason:HandleCanvasDrop()
       action.spellName = info.name
     end
   end
+  if (action.type == "item" or action.type == "toy") and self:IsLocked() then
+    return
+  end
   local x, y = self:GetCursorUIPosition()
   self:PlaceCursorAction(action, x, y)
   ClearCursor()
@@ -185,7 +225,7 @@ function Mason:CreateDropCatcher()
     Mason:HandleCanvasDrop()
   end)
   catcher:SetScript("OnMouseUp", function()
-    if Mason:CursorHoldsAcceptedType() then
+    if Mason:CursorShouldArmCatcher() then
       Mason:HandleCanvasDrop()
     end
   end)

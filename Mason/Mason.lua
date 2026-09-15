@@ -20,6 +20,7 @@ local USAGE = {
   "/mason hide <key|id|spell>",
   "/mason show <key|id|spell>",
   "/mason grid <8-128>",
+  "/mason snap",
 }
 
 function Mason:OnInitialize()
@@ -68,6 +69,14 @@ function Mason:RegisterRuntimeEvents()
       if self.SyncDropCatcher then
         self:SyncDropCatcher()
       end
+    elseif event == "ACTIONBAR_SLOT_CHANGED" then
+      if self.OnMasonPickupSlotChanged then
+        self:OnMasonPickupSlotChanged()
+      end
+    elseif event == "BAG_UPDATE_DELAYED" then
+      if self.RefreshItemCounts then
+        self:RefreshItemCounts()
+      end
     elseif event == "ASSISTED_COMBAT_ACTION_SPELL_CAST" then
       if self.OnAssistedSpellSignal then
         self:OnAssistedSpellSignal()
@@ -85,6 +94,9 @@ function Mason:RegisterRuntimeEvents()
     if InCombatLockdown() and not self:IsLocked() then
       self:OnCombatLock()
     end
+    if self.PollMasonPickup then
+      self:PollMasonPickup()
+    end
     if self.PollAssistedHighlight then
       self:PollAssistedHighlight(elapsed)
     end
@@ -94,6 +106,8 @@ function Mason:RegisterRuntimeEvents()
   frame:RegisterEvent("PLAYER_REGEN_DISABLED")
   frame:RegisterEvent("CVAR_UPDATE")
   frame:RegisterEvent("CURSOR_CHANGED")
+  frame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
+  frame:RegisterEvent("BAG_UPDATE_DELAYED")
   pcall(frame.RegisterEvent, frame, "PLAYER_ENTERING_COMBAT")
   pcall(frame.RegisterEvent, frame, "ASSISTED_COMBAT_ACTION_SPELL_CAST")
 end
@@ -364,6 +378,13 @@ function Mason:OnChatCommand(input)
       return
     end
     print("Mason: grid " .. tostring(self:GetGridSize()))
+    return
+  end
+
+  if cmd == "snap" then
+    local on = not self:IsSnapEnabled()
+    self:SetSnapEnabled(on)
+    self:Notify(on and "snap on" or "snap off")
     return
   end
 
