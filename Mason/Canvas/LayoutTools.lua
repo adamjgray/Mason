@@ -633,7 +633,7 @@ function Mason:CommitDrag()
     local view = self:GetViews()[mid]
     if view and view.x ~= nil then
       local x, y = view.x, view.y
-      if self.SnapToGrid then
+      if self.SnapToGrid and not (self.FindFlyoutParent and self:FindFlyoutParent(mid)) then
         x, y = self:SnapToGrid(x, y, self:GetViewSize(view))
       end
       self:WriteViewLayout(mid, x, y)

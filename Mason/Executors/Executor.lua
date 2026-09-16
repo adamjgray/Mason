@@ -32,6 +32,11 @@ function Mason:ConfigureExecutor(exec, piece)
     exec:SetAttribute("item", piece.itemID)
   elseif ptype == "macro" then
     exec:SetAttribute("macro", piece.macroName)
+  elseif ptype == "flyout" then
+    exec:SetAttribute("type", "")
+    exec:SetAttribute("flyout", nil)
+    exec:SetAttribute("spell", nil)
+    exec:SetAttribute("LABUseCustomFlyout", false)
   end
   HonorKeyDownClicks(exec)
 end
@@ -70,6 +75,9 @@ function Mason:CrateExecutorVisual(id)
   exec:ClearAllPoints()
   exec:SetSize(1, 1)
   exec:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -2000, -2000)
+  if self.HideFlyoutArrow then
+    self:HideFlyoutArrow(exec)
+  end
   if self.HideEditHandle then
     self:HideEditHandle(id)
   end
@@ -84,6 +92,7 @@ function Mason:ParkExecutor(id)
   exec:SetAttribute("spell", nil)
   exec:SetAttribute("item", nil)
   exec:SetAttribute("macro", nil)
+  exec:SetAttribute("flyout", nil)
   self:CrateExecutorVisual(id)
 end
 

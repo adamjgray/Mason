@@ -263,6 +263,34 @@ function Mason:ApplyFaceTypeOverrides(exec, piece)
     return
   end
   local ptype = piece.type or "spell"
+  if ptype == "flyout" then
+    if self.ConfigureFlyoutParent and not self.masonPopulatingFlyout and not exec.masonFlyoutConfigured then
+      self:ConfigureFlyoutParent(exec, piece)
+    end
+    exec.IsUsable = function()
+      return true, false
+    end
+    exec.IsUnitInRange = function()
+      return nil
+    end
+    exec.outOfRange = false
+    exec.HasAction = function()
+      return true
+    end
+    if exec.icon then
+      exec.icon:SetVertexColor(1, 1, 1)
+      if exec.icon.SetDesaturated then
+        exec.icon:SetDesaturated(false)
+      end
+    end
+    if self.UpdateFlyoutArrow then
+      self:UpdateFlyoutArrow(exec, piece)
+    end
+    return
+  end
+  if self.HideFlyoutArrow then
+    self:HideFlyoutArrow(exec)
+  end
   if ptype == "macro" then
     exec.IsUsable = function()
       return true, false
@@ -613,6 +641,15 @@ function Mason:RegisterFaceCallbacks()
       Mason:FitFace(button)
       Mason:HookFaceRange(button)
       Mason:ApplyFaceTypeOverrides(button)
+      local afterPiece = button.masonPieceId and Mason:FindPiece(button.masonPieceId)
+      if afterPiece and afterPiece.type == "flyout" and not Mason.masonPopulatingFlyout and not button.masonFlyoutConfigured then
+        if Mason.ConfigureFlyoutParent then
+          Mason:ConfigureFlyoutParent(button, afterPiece)
+        end
+      end
+      if Mason.ShowFlyoutArrow then
+        Mason:ShowFlyoutArrow(button, afterPiece)
+      end
       Mason:UpdateAssistedHighlight(button)
       if Mason.ApplyCenteredScale then
         Mason:ApplyCenteredScale(button.masonPieceId)
@@ -652,7 +689,20 @@ function Mason:ConfigureFace(exec, piece)
     return
   end
   local ptype = piece.type or "spell"
-  if ptype == "spell" then
+  if ptype == "flyout" then
+    if not self.masonPopulatingFlyout and not exec.masonFlyoutConfigured then
+      if self.ConfigureFlyoutParent then
+        self:ConfigureFlyoutParent(exec, piece)
+      end
+    end
+    if not InCombatLockdown() then
+      exec:SetAttribute("type", "")
+      exec:SetAttribute("type2", "")
+      exec:SetAttribute("spell", nil)
+      exec:SetAttribute("flyout", nil)
+      exec:SetAttribute("LABUseCustomFlyout", false)
+    end
+  elseif ptype == "spell" then
     exec:SetState("0", "spell", piece.spellID or piece.spellName)
   elseif ptype == "item" or ptype == "toy" then
     exec:SetState("0", "item", piece.itemID)
@@ -704,6 +754,9 @@ function Mason:ConfigureFace(exec, piece)
   self:StripSlotArt(exec)
   self:FitFace(exec)
   self:UpdateAssistedHighlight(exec)
+  if self.ShowFlyoutArrow then
+    self:ShowFlyoutArrow(exec, piece)
+  end
 end
 
 function Mason:SkinFace(exec)
@@ -818,6 +871,10 @@ function Mason:PaintView(exec, piece)
   local tex = 134400
   if ptype == "spell" and C_Spell and C_Spell.GetSpellTexture then
     tex = C_Spell.GetSpellTexture(piece.spellID or piece.spellName) or tex
+  elseif ptype == "flyout" then
+    if self.FlyoutTexture then
+      tex = self:FlyoutTexture(piece.flyoutId) or tex
+    end
   elseif (ptype == "item" or ptype == "toy") and piece.itemID and C_Item and C_Item.GetItemIconByID then
     tex = C_Item.GetItemIconByID(piece.itemID) or tex
   elseif ptype == "macro" and piece.macroName and GetMacroInfo then

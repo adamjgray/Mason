@@ -103,6 +103,15 @@ function Mason:PieceLabel(piece)
   if not piece then
     return "?"
   end
+  if piece.type == "flyout" then
+    if piece.spellName and piece.spellName ~= "" then
+      return piece.spellName
+    end
+    if self.FlyoutLabel then
+      return self:FlyoutLabel(piece.flyoutId) or ("flyout " .. tostring(piece.flyoutId))
+    end
+    return "flyout " .. tostring(piece.flyoutId)
+  end
   return piece.spellName or piece.macroName or (piece.itemID and tostring(piece.itemID)) or piece.id
 end
 
@@ -158,6 +167,8 @@ function Mason:FindPieceByAction(ptype, fields)
     elseif (ptype == "item" or ptype == "toy") and (piece.type == "item" or piece.type == "toy") and piece.itemID == fields.itemID then
       return piece
     elseif ptype == "macro" and piece.type == "macro" and piece.macroName == fields.macroName then
+      return piece
+    elseif ptype == "flyout" and piece.type == "flyout" and piece.flyoutId == fields.flyoutId then
       return piece
     end
   end

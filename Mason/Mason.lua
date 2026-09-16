@@ -27,6 +27,8 @@ local USAGE = {
   "/mason scale <key|id|spell> <factor>",
   "/mason size [token] <px|reset>",
   "/mason undock [key|id|spell]",
+  "/mason flyout <parent> add|remove|side|cols|clear",
+  "/mason flyout close",
 }
 
 function Mason:OnInitialize()
@@ -42,6 +44,12 @@ function Mason:OnEnable()
   self:RegisterRuntimeEvents()
   if self.EnsureRules then
     self:EnsureRules()
+  end
+  if self.InstallFlyoutHooks then
+    self:InstallFlyoutHooks()
+  end
+  if self.ResetFlyoutsClosed then
+    self:ResetFlyoutsClosed()
   end
   self:QueueIfCombat(function()
     self:ApplyOverrides()
@@ -314,6 +322,26 @@ function Mason:OnChatCommand(input)
   end
 
   if cmd == "debug" then
+    local token = strtrim(rest)
+    if token ~= "" then
+      local piece = self:ResolvePieceToken(token)
+      if not piece then
+        print("Mason: no piece for " .. token)
+        return
+      end
+      local exec = self.executors and self.executors[piece.id]
+      if not exec then
+        print("Mason: no executor for " .. piece.id)
+        return
+      end
+      print(string.format(
+        "Mason: type=%s flyout=%s spellAttr=%s",
+        tostring(exec:GetAttribute("type")),
+        tostring(exec:GetAttribute("flyout")),
+        tostring(exec:GetAttribute("spell"))
+      ))
+      return
+    end
     local specID = self:GetCurrentSpecID()
     local count = 0
     for _ in pairs(self:GetKit(specID)) do
@@ -344,6 +372,20 @@ function Mason:OnChatCommand(input)
             exec:GetEffectiveScale() or 0
           ))
           break
+        end
+      end
+    end
+    for id, view in pairs(self:GetViews()) do
+      if view.visible then
+        local piece = self:FindPiece(id)
+        local exec = self.executors and self.executors[id]
+        if piece and piece.type == "flyout" and exec then
+          print(string.format(
+            "Mason: type=%s flyout=%s spellAttr=%s",
+            tostring(exec:GetAttribute("type")),
+            tostring(exec:GetAttribute("flyout")),
+            tostring(exec:GetAttribute("spell"))
+          ))
         end
       end
     end
@@ -546,6 +588,13 @@ function Mason:OnChatCommand(input)
       return
     end
     self:SetViewSize(piece.id, px)
+    return
+  end
+
+  if cmd == "flyout" then
+    if self.HandleFlyoutSlash then
+      self:HandleFlyoutSlash(rest)
+    end
     return
   end
 

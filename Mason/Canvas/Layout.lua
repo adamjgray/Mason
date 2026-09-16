@@ -79,7 +79,7 @@ function Mason:CommitViewPosition(id)
   self:PlaceView(id)
 end
 
-function Mason:PlaceView(id, x, y)
+function Mason:PlaceView(id, x, y, snap)
   local piece = self:FindPiece(id)
   if not piece then
     return false
@@ -87,6 +87,10 @@ function Mason:PlaceView(id, x, y)
   local views = self:GetViews()
   local view = views[id]
   if x ~= nil and y ~= nil then
+    if snap ~= false and self.SnapToGrid and not (self.FindFlyoutParent and self:FindFlyoutParent(id)) then
+      local size = (view and self.GetViewSize and self:GetViewSize(view)) or (self.GetDefaultSize and self:GetDefaultSize()) or 45
+      x, y = self:SnapToGrid(x, y, size)
+    end
     view = self:WriteViewLayout(id, x, y)
   else
     if not view then
@@ -139,7 +143,6 @@ function Mason:PlaceView(id, x, y)
     if self.ApplyRule then
       self:ApplyRule(exec, piece)
     end
-    print("Mason: PlaceView", id, exec:IsShown(), exec:GetWidth())
     if self:InEditMode() then
       exec:SetMovable(true)
       if self.SyncEditHandle then
@@ -281,6 +284,9 @@ function Mason:SlotHoldsPiece(slot, piece)
     end
     return id == piece.spellID
   end
+  if ptype == "flyout" and atype == "flyout" then
+    return id == piece.flyoutId
+  end
   if (ptype == "item" or ptype == "toy") and (atype == "item" or atype == "toy") then
     return id == piece.itemID
   end
@@ -400,6 +406,17 @@ function Mason:StartLockedPickup(id)
       C_Spell.PickupSpell(spell)
     elseif PickupSpell then
       PickupSpell(spell)
+    end
+  elseif ptype == "flyout" then
+    local flyoutId = piece.flyoutId
+    if PickupSpellFlyout then
+      PickupSpellFlyout(flyoutId)
+    elseif PickupFlyout then
+      PickupFlyout(flyoutId)
+    elseif piece.spellID and C_Spell and C_Spell.PickupSpell then
+      C_Spell.PickupSpell(piece.spellID)
+    elseif piece.spellID and PickupSpell then
+      PickupSpell(piece.spellID)
     end
   elseif ptype == "macro" then
     local index = piece.macroName

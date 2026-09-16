@@ -26,3 +26,4 @@ Canvas/EditMode.lua
 Canvas/LayoutTools.lua
 Face/Face.lua
 Rules/Rules.lua
+Flyouts/Flyouts.lua

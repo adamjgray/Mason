@@ -37,6 +37,11 @@ function Mason:ParseCursorAction()
     if not spellName and not (C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)) then
       return nil, "unknown"
     end
+    local looks = Mason.SpellLooksLikeFlyout and Mason:SpellLooksLikeFlyout(spellID)
+    if looks then
+      print("Mason: GetCursorInfo spell payload: " .. FormatPayload(a, b, c, d) .. " spellID=" .. tostring(spellID))
+      return nil, "ambiguous"
+    end
     return {
       type = "spell",
       spellID = spellID,
@@ -87,6 +92,26 @@ function Mason:ParseCursorAction()
       macroName = name,
     }
   end
+  if infoType == "flyout" then
+    local flyoutId = tonumber(a)
+    local infoOk = false
+    if flyoutId and GetFlyoutInfo then
+      infoOk = pcall(GetFlyoutInfo, flyoutId)
+    elseif flyoutId and C_SpellBook and C_SpellBook.GetFlyoutInfo then
+      infoOk = pcall(C_SpellBook.GetFlyoutInfo, flyoutId)
+    end
+    if not flyoutId or not infoOk then
+      print("Mason: bad flyoutId " .. tostring(a) .. " " .. tostring(infoType) .. " " .. FormatPayload(a, b, c, d))
+      return nil, "ambiguous"
+    end
+    local spellName = Mason.FlyoutLabel and Mason:FlyoutLabel(flyoutId) or nil
+    return {
+      type = "flyout",
+      flyoutId = flyoutId,
+      spellName = spellName,
+    }
+  end
+  print("Mason: GetCursorInfo payload: " .. tostring(infoType) .. " " .. FormatPayload(a, b, c, d))
   return nil
 end
 
@@ -95,7 +120,7 @@ function Mason:CursorHoldsAcceptedType()
     return false
   end
   local infoType = GetCursorInfo()
-  return infoType == "spell" or infoType == "item" or infoType == "macro" or infoType == "toy"
+  return infoType == "spell" or infoType == "item" or infoType == "macro" or infoType == "toy" or infoType == "flyout"
 end
 
 function Mason:CursorShouldArmCatcher()
@@ -106,7 +131,7 @@ function Mason:CursorShouldArmCatcher()
     return false
   end
   local infoType = GetCursorInfo()
-  if infoType == "spell" or infoType == "macro" then
+  if infoType == "spell" or infoType == "macro" or infoType == "flyout" then
     return true
   end
   if infoType == "item" or infoType == "toy" then
@@ -142,18 +167,38 @@ function Mason:SyncDropCatcher()
 end
 
 function Mason:PlaceCursorAction(action, x, y)
+  if action.type == "flyout" then
+    local flyoutId = tonumber(action.flyoutId)
+    local infoOk = false
+    if flyoutId and GetFlyoutInfo then
+      infoOk = pcall(GetFlyoutInfo, flyoutId)
+    end
+    if not flyoutId or not infoOk then
+      local infoType, a, b, c, d = GetCursorInfo()
+      print("Mason: bad flyoutId " .. tostring(action.flyoutId) .. " " .. tostring(infoType) .. " " .. FormatPayload(a, b, c, d))
+      return false
+    end
+    action.flyoutId = flyoutId
+    action.spellID = nil
+  end
   local piece = self:FindPieceByAction(action.type, action)
   if not piece then
     piece = self:CreatePiece({
       type = action.type,
-      spellID = action.spellID,
+      spellID = action.type ~= "flyout" and action.spellID or nil,
       spellName = action.spellName,
       itemID = action.itemID,
       macroName = action.macroName,
+      flyoutId = action.flyoutId,
     })
   else
     if action.spellName then
       piece.spellName = action.spellName
+    end
+    if action.flyoutId then
+      piece.type = "flyout"
+      piece.flyoutId = tonumber(action.flyoutId)
+      piece.spellID = nil
     end
   end
   if not piece then
@@ -168,6 +213,9 @@ function Mason:PlaceCursorAction(action, x, y)
   self:WriteViewLayout(piece.id, x, y)
   local msg = "placed " .. self:PieceLabel(piece)
   self:PlaceView(piece.id, x, y)
+  if action.type == "flyout" and self.PopulateBlizzardFlyoutSlots then
+    self:PopulateBlizzardFlyoutSlots(piece.id, action.flyoutId)
+  end
   self:Notify(msg)
   if self:IsLocked() then
     self:SetLocked(false)

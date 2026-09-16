@@ -27,6 +27,7 @@ function Mason:CreatePiece(fields)
     spellName = fields.spellName,
     itemID = fields.itemID,
     macroName = fields.macroName,
+    flyoutId = fields.flyoutId,
     key = nil,
     specID = specID,
   }
