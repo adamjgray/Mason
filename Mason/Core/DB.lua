@@ -10,6 +10,7 @@ local defaults = {
     locked = true,
     snap = true,
     gridSize = 32,
+    defaultSize = nil,
     views = {},
   },
 }
@@ -18,6 +19,9 @@ function Mason:InitDB()
   self.db = LibStub("AceDB-3.0"):New("MasonDB", defaults, true)
   if self.EnsureRules then
     self:EnsureRules()
+  end
+  if self.GetDefaultSize then
+    self:GetDefaultSize()
   end
 end
 

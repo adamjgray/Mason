@@ -162,8 +162,8 @@ function Mason:PlaceCursorAction(action, x, y)
   end
   if self.SnapToGrid then
     local view = self:GetViews()[piece.id]
-    local scale = (view and view.scale) or 1
-    x, y = self:SnapToGrid(x, y, scale)
+    local size = (self.GetViewSize and self:GetViewSize(view)) or 45
+    x, y = self:SnapToGrid(x, y, size)
   end
   self:WriteViewLayout(piece.id, x, y)
   local msg = "placed " .. self:PieceLabel(piece)

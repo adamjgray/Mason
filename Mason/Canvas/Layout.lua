@@ -37,20 +37,36 @@ function Mason:WriteViewLayout(id, x, y)
   view.relPoint = "BOTTOMLEFT"
   view.x = x
   view.y = y
-  view.scale = view.scale or 1
+  if view.size == nil then
+    local size = (self.GetDefaultSize and self:GetDefaultSize()) or 45
+    if self.SyncViewSize then
+      self:SyncViewSize(view, size)
+    else
+      view.size = size
+      view.scale = view.scale or 1
+    end
+  elseif self.SyncViewSize then
+    self:SyncViewSize(view, view.size)
+  else
+    view.scale = view.scale or 1
+  end
   views[id] = view
   return view
 end
 
 function Mason:CommitViewPosition(id)
+  if self.dragId and self.CommitDrag then
+    self:CommitDrag()
+    return
+  end
   local x, y = self.dragX, self.dragY
   if x == nil or y == nil then
     x, y = self:GetCursorUIPosition()
   end
   if self.SnapToGrid then
     local view = self:GetViews()[id]
-    local scale = (view and view.scale) or 1
-    x, y = self:SnapToGrid(x, y, scale)
+    local size = (self.GetViewSize and self:GetViewSize(view)) or 45
+    x, y = self:SnapToGrid(x, y, size)
   end
   self.dragX, self.dragY = nil, nil
   self:WriteViewLayout(id, x, y)
@@ -78,21 +94,31 @@ function Mason:PlaceView(id, x, y)
     end
     view.visible = true
     views[id] = view
+    if self.ResolveDockedPosition then
+      self:ResolveDockedPosition(id)
+    end
   end
   view.point = view.point or "CENTER"
   view.relPoint = view.relPoint or "BOTTOMLEFT"
   view.x = view.x or 0
   view.y = view.y or 0
-  view.scale = view.scale or 1
+  if self.EnsureViewSize then
+    self:EnsureViewSize(view)
+  elseif view.size == nil then
+    local size = (self.GetDefaultSize and self:GetDefaultSize()) or 45
+    view.size = size
+    local s0 = (self.GetFaceNativeSize and self:GetFaceNativeSize()) or 45
+    view.scale = size / s0
+  end
 
   return self:QueueIfCombat(function()
     local exec = self:EnsureExecutor(piece)
     exec:SetParent(UIParent)
     exec:ClearAllPoints()
-    local s0 = (self.GetFaceNativeSize and self:GetFaceNativeSize()) or 45
-    exec:SetSize(s0, s0)
-    exec:SetScale(view.scale or 1)
-    exec:SetPoint(view.point, UIParent, view.relPoint, view.x, view.y)
+    local size = (self.GetViewSize and self:GetViewSize(view)) or view.size or 45
+    exec:SetScale(1)
+    exec:SetSize(size, size)
+    exec:SetPoint("CENTER", UIParent, "BOTTOMLEFT", view.x, view.y)
     exec:SetAlpha(1)
     exec:Show()
     exec:EnableMouse(true)
@@ -121,6 +147,11 @@ function Mason:PlaceView(id, x, y)
       end
     elseif self.HideEditHandle then
       self:HideEditHandle(id)
+    end
+    if self.ApplyCenteredScale then
+      self:ApplyCenteredScale(id)
+    elseif self.AnchorViewCenter then
+      self:AnchorViewCenter(exec, id, view.x, view.y)
     end
   end)
 end
@@ -195,8 +226,10 @@ function Mason:ApplyLayout()
 end
 
 function Mason:OnCombatLock()
-  local id = self.dragId
-  if id then
+  if self.dragId and self.CommitDrag then
+    self:CommitDrag()
+  elseif self.dragId then
+    local id = self.dragId
     local x, y = self.dragX, self.dragY
     if x == nil or y == nil then
       x, y = self:GetCursorUIPosition()
@@ -205,10 +238,13 @@ function Mason:OnCombatLock()
     self.dragX, self.dragY = nil, nil
     if self.SnapToGrid then
       local view = self:GetViews()[id]
-      local scale = (view and view.scale) or 1
-      x, y = self:SnapToGrid(x, y, scale)
+      local size = (self.GetViewSize and self:GetViewSize(view)) or 45
+      x, y = self:SnapToGrid(x, y, size)
     end
     self:WriteViewLayout(id, x, y)
+  end
+  if self.ClearSelection then
+    self:ClearSelection()
   end
   if not self:IsLocked() then
     self:Notify("locked")

@@ -78,20 +78,88 @@ function Mason:GetFaceScale(exec)
   local id = exec and exec.masonPieceId
   if id and self.GetViews then
     local view = self:GetViews()[id]
-    if view and view.scale then
-      return view.scale
+    if view then
+      local s0 = self:GetFaceNativeSize()
+      if s0 > 0 then
+        return self:GetViewSize(view) / s0
+      end
     end
   end
   return 1
+end
+
+function Mason:GetDefaultSize()
+  local s0 = self:GetFaceNativeSize()
+  if not self.db or not self.db.char then
+    return s0
+  end
+  local n = tonumber(self.db.char.defaultSize)
+  if not n then
+    self.db.char.defaultSize = s0
+    return s0
+  end
+  return n
+end
+
+function Mason:SetDefaultSize(px)
+  px = self:ClampViewSize(px)
+  if not px then
+    return false
+  end
+  self.db.char.defaultSize = px
+  return px
+end
+
+function Mason:ClampViewSize(px)
+  px = tonumber(px)
+  if not px then
+    return nil
+  end
+  if px < 16 then
+    px = 16
+  elseif px > 128 then
+    px = 128
+  end
+  return math.floor(px + 0.5)
+end
+
+function Mason:GetViewSize(view)
+  if view and tonumber(view.size) then
+    return view.size
+  end
+  local s0 = self:GetFaceNativeSize()
+  if view and tonumber(view.scale) then
+    return s0 * view.scale
+  end
+  return self:GetDefaultSize()
+end
+
+function Mason:SyncViewSize(view, size)
+  size = self:ClampViewSize(size) or self:GetDefaultSize()
+  view.size = size
+  local s0 = self:GetFaceNativeSize()
+  if s0 > 0 then
+    view.scale = size / s0
+  end
+  return size
+end
+
+function Mason:EnsureViewSize(view)
+  if not view then
+    return self:GetDefaultSize()
+  end
+  return self:SyncViewSize(view, self:GetViewSize(view))
 end
 
 function Mason:FitFace(exec)
   if not exec or InCombatLockdown() then
     return
   end
-  local s0 = self:GetFaceNativeSize()
-  exec:SetSize(s0, s0)
-  exec:SetScale(self:GetFaceScale(exec))
+  local id = exec.masonPieceId
+  local view = id and self.GetViews and self:GetViews()[id]
+  local size = self:GetViewSize(view)
+  exec:SetScale(1)
+  exec:SetSize(size, size)
 end
 
 function Mason:FitFaceIcon(exec)
@@ -546,6 +614,11 @@ function Mason:RegisterFaceCallbacks()
       Mason:HookFaceRange(button)
       Mason:ApplyFaceTypeOverrides(button)
       Mason:UpdateAssistedHighlight(button)
+      if Mason.ApplyCenteredScale then
+        Mason:ApplyCenteredScale(button.masonPieceId)
+      elseif Mason.AnchorViewCenter then
+        Mason:AnchorViewCenter(button)
+      end
     end
     LAB.RegisterCallback(self, "OnButtonUpdate", function(_, button)
       afterLAB(button)
@@ -562,6 +635,11 @@ function Mason:RegisterFaceCallbacks()
           if exec.__LAB_Version then
             Mason:FitFace(exec)
             Mason:UpdateAssistedHighlight(exec)
+            if Mason.ApplyCenteredScale then
+              Mason:ApplyCenteredScale(exec.masonPieceId)
+            elseif Mason.AnchorViewCenter then
+              Mason:AnchorViewCenter(exec)
+            end
           end
         end
       end)

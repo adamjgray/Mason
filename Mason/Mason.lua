@@ -23,6 +23,10 @@ local USAGE = {
   "/mason snap",
   "/mason rule <key|id|spell> <preset|clear>",
   "/mason rules",
+  "/mason align left|right|top|bottom|hcenter|vcenter",
+  "/mason scale <key|id|spell> <factor>",
+  "/mason size [token] <px|reset>",
+  "/mason undock [key|id|spell]",
 }
 
 function Mason:OnInitialize()
@@ -453,6 +457,131 @@ function Mason:OnChatCommand(input)
     end
     if self:SetPieceRule(piece.id, preset) then
       self:Notify(self:PieceLabel(piece) .. " rule " .. preset)
+    end
+    return
+  end
+
+  if cmd == "align" then
+    local mode = string.lower(strtrim(rest))
+    local allowed = {
+      left = true,
+      right = true,
+      top = true,
+      bottom = true,
+      hcenter = true,
+      vcenter = true,
+    }
+    if not allowed[mode] or not self.AlignSelection then
+      print("Mason: usage: /mason align left|right|top|bottom|hcenter|vcenter")
+      return
+    end
+    self:AlignSelection(mode)
+    return
+  end
+
+  if cmd == "scale" then
+    local factor = string.match(rest, "(%S+)$")
+    local token = rest
+    if factor then
+      token = strtrim(rest:sub(1, #rest - #factor))
+    end
+    factor = tonumber(factor)
+    if not token or token == "" or not factor then
+      print("Mason: usage: /mason scale <key|id|spell> <factor>")
+      return
+    end
+    local piece = self:ResolvePieceToken(token)
+    if not piece then
+      print("Mason: no piece for " .. token)
+      return
+    end
+    if not self:SetViewScale(piece.id, factor) then
+      print("Mason: usage: /mason scale <key|id|spell> <factor>")
+    end
+    return
+  end
+
+  if cmd == "size" then
+    local restTrim = strtrim(rest)
+    if restTrim == "" then
+      print("Mason: usage: /mason size [token] <px|reset>")
+      return
+    end
+    if restTrim == "reset" then
+      local ids = self.SelectedList and self:SelectedList() or {}
+      if #ids == 0 then
+        print("Mason: usage: /mason size reset")
+        return
+      end
+      self:SizeIdsToDefault(ids)
+      return
+    end
+    local last = string.match(restTrim, "(%S+)$")
+    local head = strtrim(restTrim:sub(1, #restTrim - #last))
+    if head == "" and tonumber(last) then
+      local px = self:SetDefaultSize(last)
+      if not px then
+        print("Mason: usage: /mason size [token] <px|reset>")
+        return
+      end
+      self:Notify("default size " .. tostring(px))
+      return
+    end
+    if head == "" then
+      print("Mason: usage: /mason size [token] <px|reset>")
+      return
+    end
+    local piece = self:ResolvePieceToken(head)
+    if not piece then
+      print("Mason: no piece for " .. head)
+      return
+    end
+    if string.lower(last) == "reset" then
+      self:SetViewSize(piece.id, self:GetDefaultSize())
+      return
+    end
+    local px = tonumber(last)
+    if not px then
+      print("Mason: usage: /mason size [token] <px|reset>")
+      return
+    end
+    self:SetViewSize(piece.id, px)
+    return
+  end
+
+  if cmd == "undock" then
+    local token = strtrim(rest)
+    if token ~= "" then
+      local piece = self:ResolvePieceToken(token)
+      if not piece then
+        print("Mason: no piece for " .. token)
+        return
+      end
+      self:UndockView(piece.id)
+      if not InCombatLockdown() then
+        self:PlaceView(piece.id)
+      else
+        self:QueueIfCombat(function()
+          self:PlaceView(piece.id)
+        end)
+      end
+      return
+    end
+    local selected = self.SelectedList and self:SelectedList() or {}
+    if #selected == 0 then
+      print("Mason: usage: /mason undock <key|id|spell>")
+      return
+    end
+    for i = 1, #selected do
+      local id = selected[i]
+      self:UndockView(id)
+      if not InCombatLockdown() then
+        self:PlaceView(id)
+      else
+        self:QueueIfCombat(function()
+          self:PlaceView(id)
+        end)
+      end
     end
     return
   end

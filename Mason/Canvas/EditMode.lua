@@ -45,14 +45,41 @@ function Mason:SetSnapEnabled(enabled)
   return self.db.char.snap
 end
 
-function Mason:SnapToGrid(x, y, scale)
+function Mason:GetGridOrigin()
+  local w = (UIParent and UIParent.GetWidth and UIParent:GetWidth()) or 0
+  local h = (UIParent and UIParent.GetHeight and UIParent:GetHeight()) or 0
+  return w / 2, h / 2
+end
+
+function Mason:SnapValueToGrid(p, origin)
+  local g = self:GetGridSize()
+  origin = origin or 0
+  return origin + math.floor((p - origin) / g + 0.5) * g
+end
+
+function Mason:NextGridLine(p, origin, dir)
+  local g = self:GetGridSize()
+  origin = origin or 0
+  dir = dir >= 0 and 1 or -1
+  local nearest = self:SnapValueToGrid(p, origin)
+  if math.abs(p - nearest) <= 0.5 then
+    return nearest + dir * g
+  end
+  if dir > 0 then
+    local n = math.floor((p - origin) / g) + 1
+    return origin + n * g
+  end
+  local n = math.ceil((p - origin) / g) - 1
+  return origin + n * g
+end
+
+function Mason:SnapToGrid(x, y, size)
   if not self:IsSnapEnabled() then
     return x, y
   end
-  local g = self:GetGridSize()
-  scale = tonumber(scale) or 1
-  local s0 = (self.GetFaceNativeSize and self:GetFaceNativeSize()) or 45
-  local half = (s0 * scale) / 2
+  local ox, oy = self:GetGridOrigin()
+  size = tonumber(size) or (self.GetDefaultSize and self:GetDefaultSize()) or 45
+  local half = size / 2
   local offsets = {
     { 0, 0 },
     { 0, half },
@@ -66,16 +93,15 @@ function Mason:SnapToGrid(x, y, scale)
   }
   local bestErr, bestX, bestY
   for i = 1, #offsets do
-    local ox, oy = offsets[i][1], offsets[i][2]
-    local px, py = x + ox, y + oy
-    local gx = math.floor(px / g + 0.5) * g
-    local gy = math.floor(py / g + 0.5) * g
+    local px, py = x + offsets[i][1], y + offsets[i][2]
+    local gx = self:SnapValueToGrid(px, ox)
+    local gy = self:SnapValueToGrid(py, oy)
     local dx, dy = gx - px, gy - py
     local err = dx * dx + dy * dy
     if not bestErr or err < bestErr then
       bestErr = err
-      bestX = gx - ox
-      bestY = gy - oy
+      bestX = gx - offsets[i][1]
+      bestY = gy - offsets[i][2]
     end
   end
   return bestX, bestY
@@ -91,6 +117,7 @@ function Mason:CreateEditMode()
   veil:SetFrameStrata("HIGH")
   veil:SetFrameLevel(1)
   veil:EnableMouse(false)
+  veil:EnableKeyboard(true)
   veil:Hide()
   local dim = veil:CreateTexture(nil, "BACKGROUND")
   dim:SetAllPoints(veil)
@@ -100,6 +127,17 @@ function Mason:CreateEditMode()
   veil:SetScript("OnSizeChanged", function()
     if veil:IsShown() then
       Mason:RedrawEditGrid()
+    end
+  end)
+  veil:SetScript("OnKeyDown", function(self, key)
+    if Mason.HandleNudgeKey and Mason:HandleNudgeKey(key) then
+      if self.SetPropagateKeyboardInput then
+        self:SetPropagateKeyboardInput(false)
+      end
+      return
+    end
+    if self.SetPropagateKeyboardInput then
+      self:SetPropagateKeyboardInput(true)
     end
   end)
   self.editVeil = veil
@@ -116,6 +154,7 @@ function Mason:RedrawEditGrid()
   if not w or w == 0 then
     return
   end
+  local ox, oy = self:GetGridOrigin()
   local lines = veil.lines
   local used = 0
   local function line()
@@ -129,13 +168,19 @@ function Mason:RedrawEditGrid()
     tex:SetColorTexture(1, 1, 1, GRID_LINE_ALPHA)
     return tex
   end
-  for x = 0, w, size do
+  local n0 = math.floor((0 - ox) / size) - 1
+  local n1 = math.ceil((w - ox) / size) + 1
+  for n = n0, n1 do
+    local x = ox + n * size
     local tex = line()
     tex:ClearAllPoints()
     tex:SetPoint("BOTTOMLEFT", veil, "BOTTOMLEFT", x, 0)
     tex:SetSize(1, h)
   end
-  for y = 0, h, size do
+  local m0 = math.floor((0 - oy) / size) - 1
+  local m1 = math.ceil((h - oy) / size) + 1
+  for m = m0, m1 do
+    local y = oy + m * size
     local tex = line()
     tex:ClearAllPoints()
     tex:SetPoint("BOTTOMLEFT", veil, "BOTTOMLEFT", 0, y)
@@ -160,15 +205,18 @@ function Mason:LayoutEditHandle(id, x, y)
   if x == nil or y == nil then
     return
   end
-  local s0 = (self.GetFaceNativeSize and self:GetFaceNativeSize()) or 45
-  local scale = (view and view.scale) or 1
+  local size = (self.GetViewSize and self:GetViewSize(view)) or ((self.GetFaceNativeSize and self:GetFaceNativeSize()) or 45)
   handle:SetScale(1)
-  handle:SetSize(s0 * scale, s0 * scale)
+  handle:SetSize(size, size)
   handle:ClearAllPoints()
   handle:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
 end
 
 function Mason:DragExecutorToCursor(id)
+  if self.UpdateHandleDrag and self.dragId then
+    self:UpdateHandleDrag()
+    return
+  end
   if InCombatLockdown() then
     return
   end
@@ -188,8 +236,18 @@ function Mason:EnsureEditHandle(id, exec)
   local name = "MasonEdit_" .. sanitized
   local handle = self.editHandles[id] or _G[name]
   if not handle then
-    handle = CreateFrame("Button", name, UIParent)
+    handle = CreateFrame("Button", name, UIParent, "BackdropTemplate")
     handle:RegisterForClicks("AnyDown", "AnyUp")
+    handle:EnableMouseWheel(true)
+    handle:EnableKeyboard(true)
+    if handle.SetBackdrop then
+      handle:SetBackdrop({
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+      })
+      handle:SetBackdropColor(0, 0, 0, 0)
+      handle:SetBackdropBorderColor(0, 0, 0, 0)
+    end
     local overlay = handle:CreateTexture(nil, "BACKGROUND")
     overlay:SetAllPoints(handle)
     overlay:SetColorTexture(1, 1, 1, 0.12)
@@ -202,28 +260,40 @@ function Mason:EnsureEditHandle(id, exec)
     xt:SetText("×")
     xbtn:SetScript("OnClick", function()
       if handle.pieceId then
+        if Mason.selectedIds then
+          Mason.selectedIds[handle.pieceId] = nil
+        end
         Mason:ClearView(handle.pieceId)
       end
     end)
     handle.xbtn = xbtn
     local function stopDrag(h)
       h.masonDragging = false
-      local dragId = h.pieceId
-      Mason.dragId = nil
-      if dragId then
-        Mason:CommitViewPosition(dragId)
+      if Mason.CommitDrag then
+        Mason:CommitDrag()
+      else
+        local dragId = h.pieceId
+        Mason.dragId = nil
+        if dragId then
+          Mason:CommitViewPosition(dragId)
+        end
       end
     end
     handle:SetScript("OnMouseDown", function(h, button)
       if button ~= "LeftButton" or not Mason:InEditMode() or InCombatLockdown() then
         return
       end
-      if not h.executor then
+      if not h.executor or not h.pieceId then
         return
       end
-      Mason.dragId = h.pieceId
+      local shift = IsShiftKeyDown()
+      if shift then
+        Mason:ToggleSelect(h.pieceId)
+      else
+        Mason:SelectOnly(h.pieceId)
+      end
       h.masonDragging = true
-      Mason:DragExecutorToCursor(h.pieceId)
+      Mason:BeginHandleDrag(h.pieceId, shift)
     end)
     handle:SetScript("OnMouseUp", function(h, button)
       if button == "RightButton" and h.pieceId and Mason:InEditMode() then
@@ -234,6 +304,30 @@ function Mason:EnsureEditHandle(id, exec)
         stopDrag(h)
       end
     end)
+    handle:SetScript("OnMouseWheel", function(h, delta)
+      if not Mason:InEditMode() or InCombatLockdown() or not h.pieceId then
+        return
+      end
+      if not Mason:IsSelected(h.pieceId) then
+        return
+      end
+      if IsShiftKeyDown() then
+        Mason:SizeIdsToDefault(Mason:SelectedList())
+      else
+        Mason:SizeIds(Mason:SelectedList(), delta)
+      end
+    end)
+    handle:SetScript("OnKeyDown", function(self, key)
+      if Mason.HandleNudgeKey and Mason:HandleNudgeKey(key) then
+        if self.SetPropagateKeyboardInput then
+          self:SetPropagateKeyboardInput(false)
+        end
+        return
+      end
+      if self.SetPropagateKeyboardInput then
+        self:SetPropagateKeyboardInput(true)
+      end
+    end)
     handle:SetScript("OnHide", function(h)
       if h.masonDragging then
         stopDrag(h)
@@ -241,7 +335,7 @@ function Mason:EnsureEditHandle(id, exec)
     end)
     handle:SetScript("OnUpdate", function(h)
       if h.masonDragging and h.pieceId then
-        Mason:DragExecutorToCursor(h.pieceId)
+        Mason:UpdateHandleDrag()
         return
       end
       if h.pieceId and h:IsShown() then
@@ -252,6 +346,9 @@ function Mason:EnsureEditHandle(id, exec)
   end
   handle.pieceId = id
   handle.executor = exec
+  if self.PaintHandleSelection then
+    self:PaintHandleSelection(handle, self:IsSelected(id))
+  end
   return handle
 end
 
@@ -266,6 +363,9 @@ function Mason:HideEditHandle(id)
   handle:EnableMouse(false)
   if handle.xbtn then
     handle.xbtn:EnableMouse(false)
+  end
+  if self.HideHandleDockHints then
+    self:HideHandleDockHints(handle)
   end
   handle:Hide()
 end
@@ -306,7 +406,11 @@ function Mason:SyncEditHandle(id)
 end
 
 function Mason:HideEditChrome()
+  if self.ClearSelection then
+    self:ClearSelection()
+  end
   if self.editVeil then
+    self.editVeil:EnableMouse(false)
     self.editVeil:Hide()
   end
   for id in pairs(self.editHandles or {}) do
@@ -318,6 +422,10 @@ function Mason:RefreshEditMode()
   self:CreateEditMode()
   if self:InEditMode() then
     self.editVeil:Show()
+    self.editVeil:EnableMouse(false)
+    if self.editVeil.EnableKeyboard then
+      self.editVeil:EnableKeyboard(true)
+    end
     self:RedrawEditGrid()
     local current = self:GetKit()
     for id, handle in pairs(self.editHandles or {}) do
@@ -331,6 +439,9 @@ function Mason:RefreshEditMode()
       else
         self:HideEditHandle(id)
       end
+    end
+    if self.RefreshDockHints then
+      self:RefreshDockHints()
     end
   else
     self:HideEditChrome()
