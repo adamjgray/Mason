@@ -532,8 +532,14 @@ function Mason:RegisterFaceCallbacks()
       end
       local view = Mason.GetViews and Mason:GetViews()[button.masonPieceId]
       if view and view.visible then
-        button:SetAlpha(1)
-        button:Show()
+        if Mason.InEditMode and Mason:InEditMode() then
+          button:Show()
+        end
+        if Mason.PaintRule then
+          Mason:PaintRule(button)
+        else
+          button:SetAlpha(1)
+        end
       end
       Mason:StripSlotArt(button)
       Mason:FitFace(button)

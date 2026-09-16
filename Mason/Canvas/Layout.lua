@@ -110,6 +110,9 @@ function Mason:PlaceView(id, x, y)
     if self.UpdateAssistedHighlight then
       self:UpdateAssistedHighlight(exec)
     end
+    if self.ApplyRule then
+      self:ApplyRule(exec, piece)
+    end
     print("Mason: PlaceView", id, exec:IsShown(), exec:GetWidth())
     if self:InEditMode() then
       exec:SetMovable(true)

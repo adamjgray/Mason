@@ -61,6 +61,9 @@ function Mason:CrateExecutorVisual(id)
   if not exec then
     return
   end
+  if self.ClearVisibilityDriver then
+    self:ClearVisibilityDriver(exec)
+  end
   exec:EnableMouse(false)
   exec:Hide()
   exec:SetAlpha(0)

@@ -4,6 +4,7 @@ local defaults = {
   profile = {
     nextPieceIndex = 1,
     specKits = {},
+    rules = {},
   },
   char = {
     locked = true,
@@ -15,6 +16,9 @@ local defaults = {
 
 function Mason:InitDB()
   self.db = LibStub("AceDB-3.0"):New("MasonDB", defaults, true)
+  if self.EnsureRules then
+    self:EnsureRules()
+  end
 end
 
 function Mason:GetCurrentSpecID()

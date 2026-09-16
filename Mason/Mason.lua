@@ -21,6 +21,8 @@ local USAGE = {
   "/mason show <key|id|spell>",
   "/mason grid <8-128>",
   "/mason snap",
+  "/mason rule <key|id|spell> <preset|clear>",
+  "/mason rules",
 }
 
 function Mason:OnInitialize()
@@ -34,6 +36,9 @@ function Mason:OnEnable()
   self:CreateDropCatcher()
   self:CreateEditMode()
   self:RegisterRuntimeEvents()
+  if self.EnsureRules then
+    self:EnsureRules()
+  end
   self:QueueIfCombat(function()
     self:ApplyOverrides()
     self:ApplyLayout()
@@ -63,8 +68,18 @@ function Mason:RegisterRuntimeEvents()
       end)
     elseif event == "PLAYER_REGEN_ENABLED" then
       self:FlushCombatQueue()
+      if self.PaintRules then
+        self:PaintRules()
+      end
     elseif event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_ENTERING_COMBAT" then
       self:OnCombatLock()
+      if self.PaintRules then
+        self:PaintRules()
+      end
+    elseif event == "PLAYER_TARGET_CHANGED" then
+      if self.PaintRules then
+        self:PaintRules()
+      end
     elseif event == "CURSOR_CHANGED" then
       if self.SyncDropCatcher then
         self:SyncDropCatcher()
@@ -100,8 +115,18 @@ function Mason:RegisterRuntimeEvents()
     if self.PollAssistedHighlight then
       self:PollAssistedHighlight(elapsed)
     end
+    if self.PaintRules and self.HasVisibleView and self:HasVisibleView() then
+      self.rulePaintElapsed = (self.rulePaintElapsed or 0) + elapsed
+      if self.rulePaintElapsed >= 0.1 then
+        self.rulePaintElapsed = 0
+        self:PaintRules()
+      end
+    else
+      self.rulePaintElapsed = 0
+    end
   end)
   frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+  frame:RegisterEvent("PLAYER_TARGET_CHANGED")
   frame:RegisterEvent("PLAYER_REGEN_ENABLED")
   frame:RegisterEvent("PLAYER_REGEN_DISABLED")
   frame:RegisterEvent("CVAR_UPDATE")
@@ -385,6 +410,50 @@ function Mason:OnChatCommand(input)
     local on = not self:IsSnapEnabled()
     self:SetSnapEnabled(on)
     self:Notify(on and "snap on" or "snap off")
+    return
+  end
+
+  if cmd == "rules" then
+    if self.ListRulePresets then
+      self:ListRulePresets()
+    end
+    return
+  end
+
+  if cmd == "rule" then
+    local preset = string.match(rest, "(%S+)$")
+    local token = rest
+    if preset then
+      token = strtrim(rest:sub(1, #rest - #preset))
+    end
+    if not preset or token == "" then
+      print("Mason: usage: /mason rule <key|id|spell> <preset|clear>")
+      return
+    end
+    preset = string.lower(preset)
+    local piece = self:ResolvePieceToken(token)
+    if not piece then
+      print("Mason: no piece for " .. token)
+      return
+    end
+    if preset ~= "clear" then
+      local allowed = {
+        always = true,
+        combat = true,
+        ooc = true,
+        target = true,
+        harm = true,
+        help = true,
+        stealth = true,
+      }
+      if not allowed[preset] then
+        print("Mason: invalid condition")
+        return
+      end
+    end
+    if self:SetPieceRule(piece.id, preset) then
+      self:Notify(self:PieceLabel(piece) .. " rule " .. preset)
+    end
     return
   end
 

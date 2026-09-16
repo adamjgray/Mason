@@ -24,3 +24,4 @@ Canvas/Layout.lua
 Canvas/DropCatcher.lua
 Canvas/EditMode.lua
 Face/Face.lua
+Rules/Rules.lua
