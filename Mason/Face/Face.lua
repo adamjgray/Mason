@@ -95,7 +95,6 @@ function Mason:GetDefaultSize()
   end
   local n = tonumber(self.db.char.defaultSize)
   if not n then
-    self.db.char.defaultSize = s0
     return s0
   end
   return n
@@ -151,25 +150,23 @@ function Mason:EnsureViewSize(view)
   return self:SyncViewSize(view, self:GetViewSize(view))
 end
 
-function Mason:FitFace(exec)
-  if not exec or InCombatLockdown() then
-    return
-  end
-  local id = exec.masonPieceId
-  local view = id and self.GetViews and self:GetViews()[id]
-  local size = self:GetViewSize(view)
-  exec:SetScale(1)
-  exec:SetSize(size, size)
-end
-
-function Mason:FitFaceIcon(exec)
-  self:FitFace(exec)
-end
-
 function Mason:StripSlotArt(exec)
   if not exec or self:GetMasqueGroup() then
     return
   end
+end
+
+function Mason:FitFace(exec)
+  if not exec or InCombatLockdown() then
+    return
+  end
+  local s0 = self:GetFaceNativeSize()
+  exec:SetScale(1)
+  exec:SetSize(s0, s0)
+end
+
+function Mason:FitFaceIcon(exec)
+  self:FitFace(exec)
 end
 
 function Mason:FitHoverChrome(exec)
@@ -656,6 +653,9 @@ function Mason:RegisterFaceCallbacks()
       elseif Mason.AnchorViewCenter then
         Mason:AnchorViewCenter(button)
       end
+      if Mason.ApplyViewPixelBox then
+        Mason:ApplyViewPixelBox(button.masonPieceId)
+      end
     end
     LAB.RegisterCallback(self, "OnButtonUpdate", function(_, button)
       afterLAB(button)
@@ -752,10 +752,15 @@ function Mason:ConfigureFace(exec, piece)
     self:WireLockedPickup(exec)
   end
   self:StripSlotArt(exec)
-  self:FitFace(exec)
   self:UpdateAssistedHighlight(exec)
   if self.ShowFlyoutArrow then
     self:ShowFlyoutArrow(exec, piece)
+  end
+  self:FitFace(exec)
+  if self.ApplyCenteredScale then
+    self:ApplyCenteredScale(exec.masonPieceId)
+  elseif self.AnchorViewCenter then
+    self:AnchorViewCenter(exec)
   end
 end
 
@@ -791,8 +796,13 @@ function Mason:UpdateFace(exec, piece)
   self:ConfigureFace(exec, piece)
   self:SkinFace(exec)
   self:StripSlotArt(exec)
-  self:FitFace(exec)
   self:UpdateAssistedHighlight(exec)
+  self:FitFace(exec)
+  if self.ApplyCenteredScale then
+    self:ApplyCenteredScale(exec.masonPieceId)
+  elseif self.AnchorViewCenter then
+    self:AnchorViewCenter(exec)
+  end
 end
 
 function Mason:EnsureExecutor(piece)
@@ -836,6 +846,9 @@ function Mason:EnsureExecutor(piece)
   end
   local numericId = tonumber((tostring(piece.id):match("%d+"))) or 1
   exec = LAB:CreateButton(numericId, name, self:GetLABHeader(), FACE_CONFIG)
+  if not InCombatLockdown() then
+    exec:SetParent(UIParent)
+  end
   exec:SetSize(1, 1)
   exec:ClearAllPoints()
   exec:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -2000, -2000)

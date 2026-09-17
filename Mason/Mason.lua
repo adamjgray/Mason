@@ -29,6 +29,7 @@ local USAGE = {
   "/mason undock [key|id|spell]",
   "/mason flyout <parent> add|remove|side|cols|clear",
   "/mason flyout close",
+  "/mason kb",
 }
 
 function Mason:OnInitialize()
@@ -47,6 +48,9 @@ function Mason:OnEnable()
   end
   if self.InstallFlyoutHooks then
     self:InstallFlyoutHooks()
+  end
+  if self.EnsureBindCatcher then
+    self:EnsureBindCatcher()
   end
   if self.ResetFlyoutsClosed then
     self:ResetFlyoutsClosed()
@@ -84,6 +88,9 @@ function Mason:RegisterRuntimeEvents()
         self:PaintRules()
       end
     elseif event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_ENTERING_COMBAT" then
+      if self.ExitBindMode then
+        self:ExitBindMode()
+      end
       self:OnCombatLock()
       if self.PaintRules then
         self:PaintRules()
@@ -118,8 +125,13 @@ function Mason:RegisterRuntimeEvents()
     end
   end)
   frame:SetScript("OnUpdate", function(_, elapsed)
-    if InCombatLockdown() and not self:IsLocked() then
-      self:OnCombatLock()
+    if InCombatLockdown() then
+      if self.ExitBindMode then
+        self:ExitBindMode()
+      end
+      if not self:IsLocked() then
+        self:OnCombatLock()
+      end
     end
     if self.PollMasonPickup then
       self:PollMasonPickup()
@@ -388,6 +400,13 @@ function Mason:OnChatCommand(input)
           ))
         end
       end
+    end
+    return
+  end
+
+  if cmd == "kb" then
+    if self.ToggleBindMode then
+      self:ToggleBindMode()
     end
     return
   end

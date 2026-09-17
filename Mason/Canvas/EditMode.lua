@@ -205,9 +205,11 @@ function Mason:LayoutEditHandle(id, x, y)
   if x == nil or y == nil then
     return
   end
-  local size = (self.GetViewSize and self:GetViewSize(view)) or ((self.GetFaceNativeSize and self:GetFaceNativeSize()) or 45)
+  local s0 = (self.GetFaceNativeSize and self:GetFaceNativeSize()) or 45
+  local S = (view and tonumber(view.size)) or (self.GetDefaultSize and self:GetDefaultSize()) or s0
+  handle:SetParent(UIParent)
   handle:SetScale(1)
-  handle:SetSize(size, size)
+  handle:SetSize(S, S)
   handle:ClearAllPoints()
   handle:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
 end
@@ -222,10 +224,16 @@ function Mason:DragExecutorToCursor(id)
   end
   local x, y = self:GetCursorUIPosition()
   self.dragX, self.dragY = x, y
-  local exec = self.executors and self.executors[id]
-  if exec then
-    exec:ClearAllPoints()
-    exec:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+  local view = self:GetViews()[id]
+  if view then
+    view.x, view.y = x, y
+  end
+  local host = self.scaleHosts and self.scaleHosts[id]
+  if host then
+    host:ClearAllPoints()
+    host:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+  elseif self.ApplyViewPixelBox then
+    self:ApplyViewPixelBox(id)
   end
   self:LayoutEditHandle(id, x, y)
 end
@@ -409,6 +417,9 @@ function Mason:HideEditChrome()
   if self.ClearSelection then
     self:ClearSelection()
   end
+  if self.HideEditBar then
+    self:HideEditBar()
+  end
   if self.editVeil then
     self.editVeil:EnableMouse(false)
     self.editVeil:Hide()
@@ -442,6 +453,9 @@ function Mason:RefreshEditMode()
     end
     if self.RefreshDockHints then
       self:RefreshDockHints()
+    end
+    if self.ShowEditBar then
+      self:ShowEditBar()
     end
   else
     self:HideEditChrome()

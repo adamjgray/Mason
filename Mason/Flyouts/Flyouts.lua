@@ -1060,6 +1060,14 @@ function Mason:PointFlyoutChild(id, x, y)
   if not exec or InCombatLockdown() then
     return
   end
+  if self.ApplyViewPixelBox then
+    self:ApplyViewPixelBox(id)
+    exec:SetParent(UIParent)
+    exec:SetAlpha(1)
+    exec:Show()
+    exec:EnableMouse(true)
+    return
+  end
   local size = (self.GetViewSize and self:GetViewSize(view)) or view.size or 45
   exec:SetParent(UIParent)
   exec:ClearAllPoints()

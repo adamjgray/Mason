@@ -69,12 +69,19 @@ function Mason:CrateExecutorVisual(id)
   if self.ClearVisibilityDriver then
     self:ClearVisibilityDriver(exec)
   end
+  if not InCombatLockdown() then
+    exec:SetParent(UIParent)
+  end
   exec:EnableMouse(false)
   exec:Hide()
   exec:SetAlpha(0)
   exec:ClearAllPoints()
   exec:SetSize(1, 1)
   exec:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -2000, -2000)
+  local host = self.scaleHosts and self.scaleHosts[id]
+  if host then
+    host:Hide()
+  end
   if self.HideFlyoutArrow then
     self:HideFlyoutArrow(exec)
   end

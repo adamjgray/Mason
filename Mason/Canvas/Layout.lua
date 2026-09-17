@@ -18,6 +18,9 @@ end
 
 function Mason:SetLocked(locked)
   locked = not not locked
+  if not locked and self:IsLocked() and self.TakeEditViewsSnapshot then
+    self:TakeEditViewsSnapshot()
+  end
   self.db.char.locked = locked
   if locked then
     self:HideEditChrome()
@@ -118,11 +121,18 @@ function Mason:PlaceView(id, x, y, snap)
   return self:QueueIfCombat(function()
     local exec = self:EnsureExecutor(piece)
     exec:SetParent(UIParent)
-    exec:ClearAllPoints()
-    local size = (self.GetViewSize and self:GetViewSize(view)) or view.size or 45
-    exec:SetScale(1)
-    exec:SetSize(size, size)
-    exec:SetPoint("CENTER", UIParent, "BOTTOMLEFT", view.x, view.y)
+    if self.ApplyViewPixelBox then
+      self:ApplyViewPixelBox(id)
+    else
+      exec:ClearAllPoints()
+      local s0 = (self.GetFaceNativeSize and self:GetFaceNativeSize()) or 45
+      local px = tonumber(view.size) or (self.GetDefaultSize and self:GetDefaultSize()) or s0
+      local scale = s0 > 0 and (px / s0) or 1
+      exec:SetSize(s0, s0)
+      exec:SetScale(scale)
+      local vis = s0 * scale
+      exec:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", view.x - vis / 2, view.y + vis / 2)
+    end
     exec:SetAlpha(1)
     exec:Show()
     exec:EnableMouse(true)
@@ -155,6 +165,26 @@ function Mason:PlaceView(id, x, y, snap)
       self:ApplyCenteredScale(id)
     elseif self.AnchorViewCenter then
       self:AnchorViewCenter(exec, id, view.x, view.y)
+    end
+    if self.ApplyViewPixelBox then
+      self:ApplyViewPixelBox(id)
+    end
+    if C_Timer and C_Timer.After then
+      C_Timer.After(0, function()
+        if InCombatLockdown() then
+          return
+        end
+        if Mason.ApplyViewPixelBox then
+          Mason:ApplyViewPixelBox(id)
+        end
+        if not Mason.masonPrintedPlaceFacts and Mason.ReportScaleFacts then
+          Mason.masonPrintedPlaceFacts = true
+          Mason:ReportScaleFacts(id)
+        end
+      end)
+    elseif not self.masonPrintedPlaceFacts and self.ReportScaleFacts then
+      self.masonPrintedPlaceFacts = true
+      self:ReportScaleFacts(id)
     end
   end)
 end
@@ -229,6 +259,9 @@ function Mason:ApplyLayout()
 end
 
 function Mason:OnCombatLock()
+  if self.ExitBindMode then
+    self:ExitBindMode()
+  end
   if self.dragId and self.CommitDrag then
     self:CommitDrag()
   elseif self.dragId then

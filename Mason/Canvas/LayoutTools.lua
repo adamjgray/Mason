@@ -3,11 +3,29 @@ local Mason = LibStub("AceAddon-3.0"):GetAddon("Mason")
 local DOCK_PX = 8
 local GOLD = { 1, 0.82, 0, 1 }
 
+function Mason:ScaleHostName(id)
+  return "MasonScaleHost_" .. tostring(id):gsub("[^%w_]", "_")
+end
+
+function Mason:EnsureScaleHost(id)
+  self.scaleHosts = self.scaleHosts or {}
+  local host = self.scaleHosts[id] or _G[self:ScaleHostName(id)]
+  if not host then
+    if InCombatLockdown() then
+      return nil
+    end
+    host = CreateFrame("Frame", self:ScaleHostName(id), UIParent)
+    host:EnableMouse(false)
+  end
+  self.scaleHosts[id] = host
+  return host
+end
+
 function Mason:AnchorViewCenter(exec, id, x, y)
-  if not exec or InCombatLockdown() then
+  if InCombatLockdown() then
     return
   end
-  id = id or exec.masonPieceId
+  id = id or (exec and exec.masonPieceId)
   local view = id and self:GetViews()[id]
   if not view or not view.visible then
     return
@@ -17,38 +35,121 @@ function Mason:AnchorViewCenter(exec, id, x, y)
   if x == nil or y == nil then
     return
   end
-  exec:ClearAllPoints()
-  exec:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+  view.x, view.y = x, y
+  if self.ApplyViewPixelBox then
+    self:ApplyViewPixelBox(id)
+    return
+  end
   if self.LayoutEditHandle then
     self:LayoutEditHandle(id, x, y)
   end
 end
 
 function Mason:ApplyCenteredScale(id)
+  if self.ApplyViewPixelBox then
+    self:ApplyViewPixelBox(id)
+  end
+end
+
+function Mason:ReportScaleFacts(id)
+  local m = self.masonHostMeasure
+  if not m or m.id ~= id then
+    return
+  end
+  print(string.format(
+    "Mason: hostC=%s,%s execTL=%s,%s view=%s,%s S=%s S0=%s",
+    tostring(m.hx),
+    tostring(m.hy),
+    tostring(m.tlx),
+    tostring(m.tly),
+    tostring(m.x),
+    tostring(m.y),
+    tostring(m.S),
+    tostring(m.s0)
+  ))
+end
+
+function Mason:ApplyViewPixelBox(id)
   if InCombatLockdown() then
     return
   end
   local view = self:GetViews()[id]
   local exec = self.executors and self.executors[id]
-  if not view or not view.visible or not exec then
+  if not view or not exec then
     return
+  end
+  local s0 = (self.GetFaceNativeSize and self:GetFaceNativeSize()) or 45
+  local S = tonumber(view.size) or (self.GetDefaultSize and self:GetDefaultSize()) or s0
+  if self.SyncViewSize then
+    S = self:SyncViewSize(view, S)
+  else
+    view.size = S
+  end
+  local scale = 1
+  if s0 > 0 then
+    scale = S / s0
   end
   local x, y = view.x, view.y
-  if x == nil or y == nil then
+  local host = self:EnsureScaleHost(id)
+  if not host then
     return
   end
-  if self.FitFace then
-    self:FitFace(exec)
-  else
-    local size = self:GetViewSize(view)
-    exec:SetScale(1)
-    exec:SetSize(size, size)
+  self:HookExecSizeGuard(exec, id)
+  host:SetParent(UIParent)
+  host:SetScale(1)
+  host:SetSize(S, S)
+  host:Show()
+  if x ~= nil and y ~= nil then
+    host:ClearAllPoints()
+    host:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
   end
+  exec:SetParent(host)
+  exec.masonApplyingSize = true
+  exec:SetScale(1)
+  exec:SetSize(s0, s0)
   exec:ClearAllPoints()
-  exec:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
-  if self.LayoutEditHandle then
-    self:LayoutEditHandle(id, x, y)
+  exec:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+  exec:SetScale(scale)
+  exec.masonApplyingSize = false
+  local handle = self.editHandles and self.editHandles[id]
+  if handle and x ~= nil and y ~= nil then
+    handle:SetParent(UIParent)
+    handle:SetScale(1)
+    handle:SetSize(S, S)
+    handle:ClearAllPoints()
+    handle:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
   end
+  local hx, hy = host:GetCenter()
+  local tlx, tly = exec:GetLeft(), exec:GetTop()
+  self.masonHostMeasure = {
+    id = id,
+    hx = hx,
+    hy = hy,
+    tlx = tlx,
+    tly = tly,
+    x = x,
+    y = y,
+    S = S,
+    s0 = s0,
+  }
+end
+
+function Mason:HookExecSizeGuard(exec, id)
+  if not exec or exec.masonSizeHooked then
+    return
+  end
+  exec.masonSizeHooked = true
+  exec:HookScript("OnSizeChanged", function(self, w)
+    if self.masonApplyingSize or InCombatLockdown() then
+      return
+    end
+    local pid = id or self.masonPieceId
+    local s0 = Mason.GetFaceNativeSize and Mason:GetFaceNativeSize() or 45
+    w = w or self:GetWidth() or 0
+    if math.abs(w - s0) > 1 and Mason.ApplyViewPixelBox then
+      Mason:ApplyViewPixelBox(pid)
+    end
+  end)
 end
 
 function Mason:GetViewHalf(view)
@@ -778,16 +879,20 @@ function Mason:SetViewSize(id, px)
   local x, y = view.x, view.y
   local function finish()
     view.x, view.y = x, y
-    local exec = self.executors and self.executors[id]
-    if exec then
-      exec:SetScale(1)
-    end
+    view.size = size
     if self.ApplyCenteredScale then
       self:ApplyCenteredScale(id)
     elseif not InCombatLockdown() then
       self:PlaceView(id)
     end
     self:RelayoutDocked(id)
+    if self.ApplyViewPixelBox then
+      self:ApplyViewPixelBox(id)
+    end
+    if not self.masonPrintedWheelFacts and self.ReportScaleFacts then
+      self.masonPrintedWheelFacts = true
+      self:ReportScaleFacts(id)
+    end
   end
   if InCombatLockdown() then
     self:QueueIfCombat(function()
@@ -869,6 +974,9 @@ function Mason:NudgeSelectionToGrid(dirx, diry)
 end
 
 function Mason:HandleNudgeKey(key)
+  if self.bindMode then
+    return false
+  end
   if not self:InEditMode() then
     return false
   end
