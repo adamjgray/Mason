@@ -13,6 +13,8 @@ libs/LibActionButton-1.0/LibActionButton-1.0.lua
 libs/AceAddon-3.0/AceAddon-3.0.xml
 libs/AceConsole-3.0/AceConsole-3.0.xml
 libs/AceDB-3.0/AceDB-3.0.xml
+libs/AceSerializer-3.0/AceSerializer-3.0.xml
+libs/LibDeflate/LibDeflate.lua
 
 Mason.lua
 Core/Queue.lua
@@ -28,3 +30,4 @@ Face/Face.lua
 Rules/Rules.lua
 Flyouts/Flyouts.lua
 Binds/BindMode.lua
+Share/ImportExport.lua

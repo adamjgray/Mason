@@ -30,6 +30,8 @@ local USAGE = {
   "/mason flyout <parent> add|remove|side|cols|clear",
   "/mason flyout close",
   "/mason kb",
+  "/mason export kit|layout|full",
+  "/mason import",
 }
 
 function Mason:OnInitialize()
@@ -407,6 +409,28 @@ function Mason:OnChatCommand(input)
   if cmd == "kb" then
     if self.ToggleBindMode then
       self:ToggleBindMode()
+    end
+    return
+  end
+
+  if cmd == "export" then
+    local kind = string.lower(strtrim(rest))
+    if self.ExportShare then
+      self:ExportShare(kind)
+    end
+    return
+  end
+
+  if cmd == "import" then
+    local payload = strtrim(rest)
+    if payload == "" then
+      if self.ShowShareDialog then
+        self:ShowShareDialog("", true)
+      end
+      return
+    end
+    if self.ImportShare then
+      self:ImportShare(payload)
     end
     return
   end
