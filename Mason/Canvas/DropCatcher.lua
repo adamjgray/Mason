@@ -24,7 +24,7 @@ function Mason:ParseCursorAction()
     elseif type(a) == "number" and type(b) ~= "string" then
       spellID = a
     else
-      print("Mason: GetCursorInfo spell payload: " .. FormatPayload(a, b, c, d))
+      Mason:DebugPrint("Mason: GetCursorInfo spell payload: " .. FormatPayload(a, b, c, d))
       return nil, "ambiguous"
     end
     local spellName
@@ -39,7 +39,7 @@ function Mason:ParseCursorAction()
     end
     local looks = Mason.SpellLooksLikeFlyout and Mason:SpellLooksLikeFlyout(spellID)
     if looks then
-      print("Mason: GetCursorInfo spell payload: " .. FormatPayload(a, b, c, d) .. " spellID=" .. tostring(spellID))
+      Mason:DebugPrint("Mason: GetCursorInfo spell payload: " .. FormatPayload(a, b, c, d) .. " spellID=" .. tostring(spellID))
       return nil, "ambiguous"
     end
     return {
@@ -101,7 +101,7 @@ function Mason:ParseCursorAction()
       infoOk = pcall(C_SpellBook.GetFlyoutInfo, flyoutId)
     end
     if not flyoutId or not infoOk then
-      print("Mason: bad flyoutId " .. tostring(a) .. " " .. tostring(infoType) .. " " .. FormatPayload(a, b, c, d))
+      Mason:DebugPrint("Mason: bad flyoutId " .. tostring(a) .. " " .. tostring(infoType) .. " " .. FormatPayload(a, b, c, d))
       return nil, "ambiguous"
     end
     local spellName = Mason.FlyoutLabel and Mason:FlyoutLabel(flyoutId) or nil
@@ -111,7 +111,7 @@ function Mason:ParseCursorAction()
       spellName = spellName,
     }
   end
-  print("Mason: GetCursorInfo payload: " .. tostring(infoType) .. " " .. FormatPayload(a, b, c, d))
+  Mason:DebugPrint("Mason: GetCursorInfo payload: " .. tostring(infoType) .. " " .. FormatPayload(a, b, c, d))
   return nil
 end
 
@@ -149,7 +149,7 @@ function Mason:SyncDropCatcher()
     catcher:SetFrameStrata("FULLSCREEN_DIALOG")
     catcher:Show()
     if not catcher:IsMouseEnabled() then
-      print("Mason: drop catcher mouse on")
+      Mason:DebugPrint("Mason: drop catcher mouse on")
     end
     catcher:EnableMouse(true)
     if self.SetEditHandlesMouse then
@@ -175,7 +175,7 @@ function Mason:PlaceCursorAction(action, x, y)
     end
     if not flyoutId or not infoOk then
       local infoType, a, b, c, d = GetCursorInfo()
-      print("Mason: bad flyoutId " .. tostring(action.flyoutId) .. " " .. tostring(infoType) .. " " .. FormatPayload(a, b, c, d))
+      Mason:DebugPrint("Mason: bad flyoutId " .. tostring(action.flyoutId) .. " " .. tostring(infoType) .. " " .. FormatPayload(a, b, c, d))
       return false
     end
     action.flyoutId = flyoutId
@@ -219,7 +219,7 @@ function Mason:PlaceCursorAction(action, x, y)
   self:Notify(msg)
   if self:IsLocked() then
     self:SetLocked(false)
-    self:Notify("unlocked")
+    self:DebugPrint("Mason: edit on")
   end
 end
 

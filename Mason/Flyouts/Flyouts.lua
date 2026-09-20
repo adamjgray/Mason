@@ -315,6 +315,9 @@ function Mason:ResolveFlyoutIDFromSpell(spellID)
 end
 
 function Mason:PrintMissingFlyoutSlotAPI()
+  if not self:IsDebug() then
+    return
+  end
   print("Mason: GetFlyoutSlotInfo missing or usage-error")
   local function dump(tbl, prefix)
     if type(tbl) ~= "table" then
@@ -388,6 +391,9 @@ function Mason:SpellIdFromFlyoutSlotValue(v, ids)
 end
 
 function Mason:PrintFlyoutSlotReturns(slot, src, ok, ...)
+  if not self:IsDebug() then
+    return
+  end
   local n = select("#", ...)
   if not ok then
     print("Mason: slot" .. tostring(slot) .. " type=error value=" .. tostring(select(1, ...)) .. " src=" .. tostring(src))
@@ -546,7 +552,7 @@ function Mason:PopulateBlizzardFlyoutSlots(parentId, flyoutId)
     end
   end)
   if not ok then
-    print("Mason: populate flyout " .. tostring(err))
+    self:DebugPrint("Mason: populate flyout " .. tostring(err))
     return done(false)
   end
   local piece = self:FindPiece(parentId)
@@ -554,10 +560,10 @@ function Mason:PopulateBlizzardFlyoutSlots(parentId, flyoutId)
     piece.flyoutBuilt = flyoutId
   end
   local n = fo.childIds and #fo.childIds or 0
-  print("Mason: flyout " .. tostring(flyoutId) .. " slots=" .. tostring(numSlots) .. " children=" .. tostring(n))
+  self:DebugPrint("Mason: flyout " .. tostring(flyoutId) .. " slots=" .. tostring(numSlots) .. " children=" .. tostring(n))
   if n < numSlots then
     for i = 1, #skipped do
-      print("Mason: flyout " .. tostring(flyoutId) .. " skip slot=" .. tostring(skipped[i].slot) .. " " .. tostring(skipped[i].why))
+      self:DebugPrint("Mason: flyout " .. tostring(flyoutId) .. " skip slot=" .. tostring(skipped[i].slot) .. " " .. tostring(skipped[i].why))
     end
   end
   return done(true)
@@ -710,7 +716,7 @@ function Mason:HookArrowRegionHide(exec, region, label)
       return
     end
     local rname = (region.GetName and region:GetName() and region:GetName() ~= "") and region:GetName() or label or "?"
-    print("Mason: arrow hide " .. tostring(rname))
+    self:DebugPrint("Mason: arrow hide " .. tostring(rname))
     region.masonArrowReshow = true
     region:Show()
     region.masonArrowReshow = false
@@ -859,7 +865,7 @@ function Mason:ReportSpellFlyout(exec)
     end
   end
   if isKnown == false or numSlots == 0 then
-    print("Mason: flyout isKnown=" .. tostring(isKnown) .. " numSlots=" .. tostring(numSlots) .. " cannot fake slots")
+    self:DebugPrint("Mason: flyout isKnown=" .. tostring(isKnown) .. " numSlots=" .. tostring(numSlots) .. " cannot fake slots")
   end
   local shown = sf and sf:IsShown()
   local vis = sf and sf:IsVisible()
@@ -877,14 +883,14 @@ function Mason:ReportSpellFlyout(exec)
       tostring(y),
     }, ",")
   end
-  print(string.format(
+  self:DebugPrint(string.format(
     "Mason: flyout popup shown=%s parent=%s slots=%s known=%s",
     tostring(not not shown),
     tostring(pname),
     tostring(numSlots),
     tostring(isKnown)
   ))
-  print(string.format(
+  self:DebugPrint(string.format(
     "Mason: flyout vis=%s point=%s shows=%s hides=%s",
     tostring(not not vis),
     pointDump,
@@ -892,7 +898,7 @@ function Mason:ReportSpellFlyout(exec)
     tostring(self.masonFlyoutHideCount or 0)
   ))
   if (self.masonFlyoutShowCount or 0) > 0 and (self.masonFlyoutHideCount or 0) > 0 then
-    print("Mason: flyout toggled twice in one click")
+    self:DebugPrint("Mason: flyout toggled twice in one click")
   end
 end
 
@@ -1024,7 +1030,7 @@ function Mason:OpenOfficialFlyout(exec)
     end
   end)
   if not ok then
-    print("Mason: flyout " .. tostring(err))
+    self:DebugPrint("Mason: flyout " .. tostring(err))
     if InCombatLockdown() then
       print("Mason: cannot Toggle SpellFlyout in combat")
     end
@@ -1452,9 +1458,11 @@ function Mason:CrateFlyoutChildren(parentId)
   if not fo then
     return
   end
-  for i = 1, #fo.childIds do
-    self:ClearView(fo.childIds[i])
+  local kids = fo.childIds or {}
+  for i = 1, #kids do
+    self:ClearView(kids[i], true)
   end
+  self:DebugPrint("Mason: flyout closed " .. tostring(parentId))
 end
 
 function Mason:ShouldShowFlyoutChildren(parentId)
@@ -1483,18 +1491,12 @@ function Mason:ToggleFlyoutOOC(parentId)
   for pid, view in pairs(self:GetViews()) do
     if pid ~= parentId and view.flyout and view.flyout.open then
       view.flyout.open = false
-      local kids = view.flyout.childIds or {}
-      for i = 1, #kids do
-        self:ClearView(kids[i])
-      end
+      self:CrateFlyoutChildren(pid)
     end
   end
   if fo.open then
     fo.open = false
-    local kids = fo.childIds or {}
-    for i = 1, #kids do
-      self:ClearView(kids[i])
-    end
+    self:CrateFlyoutChildren(parentId)
   else
     fo.open = true
     self:LayoutFlyoutChildren(parentId, true)
@@ -1858,7 +1860,6 @@ function Mason:FlyoutSetCols(parentId, cols)
   end
   local fo = self:EnsureFlyout(parentId)
   fo.cols = n
-  self:Notify("flyout cols " .. n)
   if self:ShouldShowFlyoutChildren(parentId) then
     self:LayoutFlyoutChildren(parentId, true)
   end

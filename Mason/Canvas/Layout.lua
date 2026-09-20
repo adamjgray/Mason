@@ -27,9 +27,26 @@ function Mason:SetLocked(locked)
   elseif self.RefreshEditMode then
     self:RefreshEditMode()
   end
+  if self.SyncOptionsRail then
+    self:SyncOptionsRail()
+  end
   return self:QueueIfCombat(function()
     self:ApplyLayout()
   end)
+end
+
+function Mason:ToggleEditMode()
+  if InCombatLockdown() and self:IsLocked() then
+    print("Mason: cannot edit in combat")
+    return false
+  end
+  local locked = not self:IsLocked()
+  local deferred = self:SetLocked(locked)
+  self:DebugPrint("Mason: " .. (locked and "edit off" or "edit on"))
+  if deferred then
+    print("Mason: queued until combat ends")
+  end
+  return true
 end
 
 function Mason:WriteViewLayout(id, x, y)
@@ -83,7 +100,7 @@ function Mason:CommitViewPosition(id)
 end
 
 function Mason:PlaceView(id, x, y, snap)
-  local piece = self:FindPiece(id)
+  local piece = self:GetKit()[id]
   if not piece then
     return false
   end
@@ -212,13 +229,13 @@ function Mason:ShowView(id)
   return deferred
 end
 
-function Mason:ClearView(id)
+function Mason:ClearView(id, silent)
   local piece = self:FindPiece(id)
   local views = self:GetViews()
   if views[id] then
     views[id].visible = false
   end
-  if piece then
+  if piece and not silent then
     self:Notify("hidden " .. self:PieceLabel(piece))
   end
   return self:QueueIfCombat(function()
@@ -283,7 +300,7 @@ function Mason:OnCombatLock()
     self:ClearSelection()
   end
   if not self:IsLocked() then
-    self:Notify("locked")
+    self:DebugPrint("Mason: edit off")
   end
   self:SetLocked(true)
 end

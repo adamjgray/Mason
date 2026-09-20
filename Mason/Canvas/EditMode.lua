@@ -8,7 +8,7 @@ function Mason:InEditMode()
 end
 
 function Mason:GetGridSize()
-  local n = self.db and self.db.char and self.db.char.gridSize
+  local n = self.db and self.db.profile and self.db.profile.gridSize
   n = tonumber(n) or 32
   if n < 8 then
     n = 8
@@ -23,7 +23,7 @@ function Mason:SetGridSize(pixels)
   if pixels < 8 or pixels > 128 then
     return false
   end
-  self.db.char.gridSize = pixels
+  self.db.profile.gridSize = pixels
   if self.editVeil and self.editVeil:IsShown() then
     self:RedrawEditGrid()
   end
@@ -31,18 +31,18 @@ function Mason:SetGridSize(pixels)
 end
 
 function Mason:IsSnapEnabled()
-  if not self.db or not self.db.char then
+  if not self.db or not self.db.profile then
     return true
   end
-  if self.db.char.snap == nil then
+  if self.db.profile.snap == nil then
     return true
   end
-  return not not self.db.char.snap
+  return not not self.db.profile.snap
 end
 
 function Mason:SetSnapEnabled(enabled)
-  self.db.char.snap = not not enabled
-  return self.db.char.snap
+  self.db.profile.snap = not not enabled
+  return self.db.profile.snap
 end
 
 function Mason:GetGridOrigin()

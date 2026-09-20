@@ -52,6 +52,9 @@ function Mason:ApplyCenteredScale(id)
 end
 
 function Mason:ReportScaleFacts(id)
+  if not self:IsDebug() then
+    return
+  end
   local m = self.masonHostMeasure
   if not m or m.id ~= id then
     return
@@ -410,7 +413,9 @@ function Mason:RefreshDockHints(previewId, previewParent, previewSide)
   self:ClearDockHints()
   for id, view in pairs(self:GetViews()) do
     if view.visible and view.dock and view.dock.parent and view.dock.side then
-      self:ShowDockPairHint(id, view.dock.parent, view.dock.side)
+      if self:IsDockCandidate(view.dock.parent) then
+        self:ShowDockPairHint(id, view.dock.parent, view.dock.side)
+      end
     end
   end
   if previewId and previewParent and previewSide then
@@ -532,6 +537,158 @@ function Mason:EdgeDockMatch(memberId, candidateId)
   return nil
 end
 
+function Mason:IsClosedFlyoutChild(id)
+  if not id or not self.FindFlyoutParent then
+    return false
+  end
+  local parentId = self:FindFlyoutParent(id)
+  if not parentId then
+    return false
+  end
+  local fo = self.GetFlyout and self:GetFlyout(parentId)
+  return not fo or fo.open ~= true
+end
+
+function Mason:IsDockCandidate(id)
+  if not id then
+    return false, "no-id"
+  end
+  local kit = self:GetKit()
+  if not kit[id] then
+    return false, "no-kit"
+  end
+  local view = self:GetViews()[id]
+  if not view or view.visible ~= true then
+    return false, "not-visible"
+  end
+  if self:IsClosedFlyoutChild(id) then
+    return false, "closed-flyout-child"
+  end
+  local exec = self.executors and self.executors[id]
+  if not exec then
+    return false, "no-exec"
+  end
+  if exec.IsShown and not exec:IsShown() then
+    return false, "exec-hidden"
+  end
+  return true
+end
+
+function Mason:IsGhostId(id)
+  if not id then
+    return false
+  end
+  local kit = self:GetKit()
+  local parent = self.FindFlyoutParent and self:FindFlyoutParent(id)
+  if parent and kit[parent] then
+    return false
+  end
+  local piece = kit[id]
+  local view = self:GetViews()[id]
+  if not piece then
+    return view ~= nil
+  end
+  local keyed = piece.key and piece.key ~= ""
+  local placed = view and view.visible == true
+  local rules = self.PieceHasRules and self:PieceHasRules(id)
+  if keyed or placed or rules then
+    return false
+  end
+  return true
+end
+
+function Mason:DebugDockGhosts()
+  local ids = self:ListGhostViews()
+  if #ids == 0 then
+    print("Mason: ghosts none")
+    return
+  end
+  for i = 1, #ids do
+    local id = ids[i]
+    local view = self:GetViews()[id]
+    local piece = self:GetKit()[id]
+    print(string.format(
+      "Mason: ghost %s kit=%s visible=%s key=%s",
+      tostring(id),
+      piece and "yes" or "no",
+      tostring(view and view.visible),
+      piece and piece.key or "-"
+    ))
+  end
+end
+
+function Mason:ListGhostViews()
+  local seen = {}
+  local ids = {}
+  local function add(id)
+    if id and not seen[id] and self:IsGhostId(id) then
+      seen[id] = true
+      ids[#ids + 1] = id
+    end
+  end
+  for id in pairs(self:GetViews()) do
+    add(id)
+  end
+  for id in pairs(self:GetKit()) do
+    add(id)
+  end
+  table.sort(ids)
+  return ids
+end
+
+function Mason:GhostRowInfo(id)
+  local piece = self:GetKit()[id]
+  if not piece then
+    local found = self:FindPiece(id)
+    piece = found
+  end
+  local ptype = piece and (piece.type or "spell") or "?"
+  local name = piece and self:PieceLabel(piece) or "leftover"
+  local tex = 134400
+  if piece then
+    if ptype == "spell" and C_Spell and C_Spell.GetSpellTexture then
+      tex = C_Spell.GetSpellTexture(piece.spellID or piece.spellName) or tex
+    elseif ptype == "flyout" and self.FlyoutTexture then
+      tex = self:FlyoutTexture(piece.flyoutId) or tex
+    elseif (ptype == "item" or ptype == "toy") and piece.itemID and C_Item and C_Item.GetItemIconByID then
+      tex = C_Item.GetItemIconByID(piece.itemID) or tex
+    elseif ptype == "macro" and piece.macroName and GetMacroInfo then
+      tex = select(2, GetMacroInfo(piece.macroName)) or tex
+    end
+  end
+  return tex, ptype, name
+end
+
+function Mason:ClearGhostView(id)
+  local leftoverKit = false
+  local piece = self:GetKit()[id]
+  if piece then
+    local keyed = piece.key and piece.key ~= ""
+    local rules = self.PieceHasRules and self:PieceHasRules(id)
+    leftoverKit = not keyed and not rules
+  end
+  local views = self:GetViews()
+  views[id] = nil
+  if leftoverKit and self.DeletePiece then
+    self:DeletePiece(id)
+  end
+  self:QueueIfCombat(function()
+    if self.CrateExecutorVisual then
+      self:CrateExecutorVisual(id)
+    end
+    if self.HideEditHandle then
+      self:HideEditHandle(id)
+    end
+  end)
+end
+
+function Mason:ClearAllGhostViews()
+  local ids = self:ListGhostViews()
+  for i = 1, #ids do
+    self:ClearGhostView(ids[i])
+  end
+end
+
 function Mason:FindBestDock(course)
   if not course then
     return nil
@@ -540,8 +697,8 @@ function Mason:FindBestDock(course)
   for memberId in pairs(course) do
     local memberView = self:GetViews()[memberId]
     if memberView and memberView.visible then
-      for otherId, view in pairs(self:GetViews()) do
-        if view.visible and not course[otherId] then
+      for otherId in pairs(self:GetKit()) do
+        if not course[otherId] and self:IsDockCandidate(otherId) then
           if not self:WouldDockCycle(memberId, otherId) then
             local dist, side = self:EdgeDockMatch(memberId, otherId)
             if dist and (not bestDist or dist < bestDist) then
@@ -575,6 +732,9 @@ end
 
 function Mason:TryDockPair(memberId, parentId, side, course)
   if not memberId or not parentId or not side then
+    return false
+  end
+  if not self:IsDockCandidate(parentId) then
     return false
   end
   if self:WouldDockCycle(memberId, parentId) then
@@ -973,23 +1133,41 @@ function Mason:NudgeSelectionToGrid(dirx, diry)
   end
 end
 
+function Mason:HandleEscapeKey()
+  if self.bindMode then
+    return false
+  end
+  if self.optionsPanel and self.optionsPanel.IsShown and self.optionsPanel:IsShown() then
+    self.optionsPanel:Hide()
+    return true
+  end
+  if not self:InEditMode() then
+    return false
+  end
+  local had = false
+  for _ in pairs(self.selectedIds or {}) do
+    had = true
+    break
+  end
+  if had then
+    if self.ClearSelection then
+      self:ClearSelection()
+    end
+  elseif self.SetLocked then
+    self:SetLocked(true)
+  end
+  return true
+end
+
 function Mason:HandleNudgeKey(key)
+  if key == "ESCAPE" then
+    return self:HandleEscapeKey()
+  end
   if self.bindMode then
     return false
   end
   if not self:InEditMode() then
     return false
-  end
-  if key == "ESCAPE" then
-    local had = false
-    for _ in pairs(self.selectedIds or {}) do
-      had = true
-      break
-    end
-    if self.ClearSelection then
-      self:ClearSelection()
-    end
-    return had
   end
   if self.dragId then
     return false

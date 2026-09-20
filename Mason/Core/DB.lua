@@ -5,18 +5,105 @@ local defaults = {
     nextPieceIndex = 1,
     specKits = {},
     rules = {},
-  },
-  char = {
-    locked = true,
+    views = {},
     snap = true,
     gridSize = 32,
     defaultSize = nil,
-    views = {},
+    debug = false,
+  },
+  char = {
+    locked = true,
   },
 }
 
+local function TableEmpty(t)
+  if type(t) ~= "table" then
+    return true
+  end
+  return next(t) == nil
+end
+
+local function CopyValue(v)
+  if type(v) ~= "table" then
+    return v
+  end
+  if CopyTable then
+    return CopyTable(v)
+  end
+  local out = {}
+  for k, val in pairs(v) do
+    out[k] = CopyValue(val)
+  end
+  return out
+end
+
+function Mason:IsDebug()
+  return self.db and self.db.profile and self.db.profile.debug and true or false
+end
+
+function Mason:DebugPrint(...)
+  if self:IsDebug() then
+    print(...)
+  end
+end
+
+function Mason:MigrateCharLayoutToProfile()
+  local profile = self.db and self.db.profile
+  local char = self.db and self.db.char
+  if not profile or not char then
+    return
+  end
+  profile.views = profile.views or {}
+  if TableEmpty(profile.views) and type(char.views) == "table" and not TableEmpty(char.views) then
+    profile.views = CopyValue(char.views)
+  end
+  if profile.snap == nil and char.snap ~= nil then
+    profile.snap = not not char.snap
+  end
+  if profile.gridSize == nil and char.gridSize ~= nil then
+    profile.gridSize = char.gridSize
+  end
+  if profile.defaultSize == nil and char.defaultSize ~= nil then
+    profile.defaultSize = char.defaultSize
+  end
+  if profile.debug == nil and char.debug ~= nil then
+    profile.debug = not not char.debug
+  end
+  char.views = nil
+end
+
+function Mason:OnAceProfileChanged()
+  self:QueueIfCombat(function()
+    local kit = Mason:GetKit()
+    for id in pairs(Mason.executors or {}) do
+      if not kit[id] then
+        Mason:ParkExecutor(id)
+        if Mason.HideEditHandle then
+          Mason:HideEditHandle(id)
+        end
+      end
+    end
+    Mason:ApplyOverrides()
+    if Mason.ApplyLayout then
+      Mason:ApplyLayout()
+    end
+    if Mason.RefreshBlizzardHotkeys then
+      Mason:RefreshBlizzardHotkeys()
+    end
+    if Mason.RefreshPiecesTable then
+      Mason:RefreshPiecesTable()
+    end
+  end)
+end
+
 function Mason:InitDB()
   self.db = LibStub("AceDB-3.0"):New("MasonDB", defaults, true)
+  self:MigrateCharLayoutToProfile()
+  if self.db.RegisterCallback then
+    self.db.RegisterCallback(self, "OnProfileChanged", "OnAceProfileChanged")
+    self.db.RegisterCallback(self, "OnProfileCopied", "OnAceProfileChanged")
+    self.db.RegisterCallback(self, "OnProfileReset", "OnAceProfileChanged")
+  end
   if self.EnsureRules then
     self:EnsureRules()
   end
@@ -159,10 +246,64 @@ function Mason:ResolvePieceToken(token, specID)
   return self:FindPieceByKey(token, specID) or self:FindPieceBySpellToken(token, specID)
 end
 
+local function SpellIdsMatch(a, b)
+  a = tonumber(a)
+  b = tonumber(b)
+  if not a or not b then
+    return false
+  end
+  if a == b then
+    return true
+  end
+  local function overrideId(id)
+    if C_Spell and C_Spell.GetOverrideSpell then
+      local ok, v = pcall(C_Spell.GetOverrideSpell, id)
+      if ok then
+        v = tonumber(v)
+        if v and v > 0 then
+          return v
+        end
+      end
+    end
+    if FindSpellOverrideBySpellID then
+      local ok, v = pcall(FindSpellOverrideBySpellID, id)
+      if ok then
+        v = tonumber(v)
+        if v and v > 0 then
+          return v
+        end
+      end
+    end
+    return id
+  end
+  local function baseId(id)
+    if C_Spell and C_Spell.GetBaseSpell then
+      local ok, v = pcall(C_Spell.GetBaseSpell, id)
+      if ok then
+        v = tonumber(v)
+        if v and v > 0 then
+          return v
+        end
+      end
+    end
+    if FindBaseSpellBySpellID then
+      local ok, v = pcall(FindBaseSpellBySpellID, id)
+      if ok then
+        v = tonumber(v)
+        if v and v > 0 then
+          return v
+        end
+      end
+    end
+    return id
+  end
+  return overrideId(a) == overrideId(b) or baseId(a) == baseId(b) or overrideId(a) == b or a == overrideId(b) or baseId(a) == b or a == baseId(b)
+end
+
 function Mason:FindPieceByAction(ptype, fields)
   fields = fields or {}
   for _, piece in pairs(self:GetKit()) do
-    if ptype == "spell" and piece.type == "spell" and piece.spellID == fields.spellID then
+    if ptype == "spell" and piece.type == "spell" and SpellIdsMatch(piece.spellID, fields.spellID) then
       return piece
     elseif (ptype == "item" or ptype == "toy") and (piece.type == "item" or piece.type == "toy") and piece.itemID == fields.itemID then
       return piece
@@ -176,7 +317,7 @@ function Mason:FindPieceByAction(ptype, fields)
 end
 
 function Mason:GetViews()
-  local char = self.db.char
-  char.views = char.views or {}
-  return char.views
+  local profile = self.db.profile
+  profile.views = profile.views or {}
+  return profile.views
 end

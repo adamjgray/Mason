@@ -56,6 +56,7 @@ local function ExportView(view)
     size = view.size,
     visible = view.visible,
     ruleId = view.ruleId,
+    ruleIds = type(view.ruleIds) == "table" and CopyValue(view.ruleIds) or nil,
   }
   if type(view.dock) == "table" then
     v.dock = CopyValue(view.dock)

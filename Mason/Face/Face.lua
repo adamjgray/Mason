@@ -90,10 +90,10 @@ end
 
 function Mason:GetDefaultSize()
   local s0 = self:GetFaceNativeSize()
-  if not self.db or not self.db.char then
+  if not self.db or not self.db.profile then
     return s0
   end
-  local n = tonumber(self.db.char.defaultSize)
+  local n = tonumber(self.db.profile.defaultSize)
   if not n then
     return s0
   end
@@ -105,7 +105,7 @@ function Mason:SetDefaultSize(px)
   if not px then
     return false
   end
-  self.db.char.defaultSize = px
+  self.db.profile.defaultSize = px
   return px
 end
 
@@ -727,6 +727,8 @@ function Mason:ConfigureFace(exec, piece)
     return nil
   end
   if exec.HotKey then
+    exec.HotKey:ClearAllPoints()
+    exec.HotKey:SetPoint("TOPRIGHT", exec, "TOPRIGHT", -2, -1)
     local key = exec:GetHotkey()
     if key then
       exec.HotKey:SetText(key)

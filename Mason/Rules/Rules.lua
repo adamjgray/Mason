@@ -109,16 +109,68 @@ function Mason:ValidateVisibility(cond)
   return true
 end
 
-function Mason:GetViewVisibility(view)
-  local vis = "show"
-  if view and view.ruleId then
-    local rule = self:GetRule(view.ruleId)
+function Mason:GetPieceRuleIds(id)
+  local view = self:GetViews()[id]
+  if not view then
+    return {}
+  end
+  if type(view.ruleIds) == "table" then
+    local out = {}
+    for i = 1, #view.ruleIds do
+      out[#out + 1] = view.ruleIds[i]
+    end
+    return out
+  end
+  if view.ruleId then
+    return { view.ruleId }
+  end
+  return {}
+end
+
+function Mason:PieceHasRules(id)
+  return #self:GetPieceRuleIds(id) > 0
+end
+
+function Mason:CombineRuleVisibility(ruleIds)
+  if not ruleIds or #ruleIds == 0 then
+    return "show"
+  end
+  local opts = {}
+  for i = 1, #ruleIds do
+    local rule = self:GetRule(ruleIds[i])
     if rule and rule.visibility then
-      vis = rule.visibility
+      if rule.visibility ~= "show" then
+        local opt = string.match(rule.visibility, "^(%b[])")
+        if opt then
+          opts[#opts + 1] = opt
+        end
+      end
     end
   end
-  if view and view.override and view.override.visibility then
-    vis = view.override.visibility
+  if #opts == 0 then
+    return "show"
+  end
+  return table.concat(opts, "") .. " show; hide"
+end
+
+function Mason:GetViewVisibility(view)
+  local vis = "show"
+  if view then
+    local ids = view.ruleIds
+    if type(ids) ~= "table" and view.ruleId then
+      ids = { view.ruleId }
+    end
+    if type(ids) == "table" and #ids > 0 then
+      vis = self:CombineRuleVisibility(ids)
+    elseif view.ruleId then
+      local rule = self:GetRule(view.ruleId)
+      if rule and rule.visibility then
+        vis = rule.visibility
+      end
+    end
+    if view.override and view.override.visibility then
+      vis = view.override.visibility
+    end
   end
   return vis
 end
@@ -126,8 +178,15 @@ end
 function Mason:GetViewPaint(view)
   local alpha = DEFAULT_ALPHA
   local desatUnusable = true
-  if view and view.ruleId then
-    local rule = self:GetRule(view.ruleId)
+  if not view then
+    return alpha, desatUnusable
+  end
+  local ruleId = view.ruleId
+  if (not ruleId) and type(view.ruleIds) == "table" then
+    ruleId = view.ruleIds[1]
+  end
+  if ruleId then
+    local rule = self:GetRule(ruleId)
     if rule then
       if InCombatLockdown() then
         if rule.alphaCombat ~= nil then
@@ -251,7 +310,7 @@ function Mason:ApplyRules()
   end
 end
 
-function Mason:SetPieceRule(id, preset)
+function Mason:SetPieceRuleIds(id, ruleIds)
   local piece = self:FindPiece(id)
   if not piece then
     return false
@@ -259,27 +318,41 @@ function Mason:SetPieceRule(id, preset)
   local views = self:GetViews()
   local view = views[id] or {}
   views[id] = view
-  if preset == "clear" then
+  if not ruleIds or #ruleIds == 0 then
     view.ruleId = nil
+    view.ruleIds = nil
     if view.override then
       view.override.visibility = nil
     end
   else
-    local spec = PRESETS[preset]
-    if not spec then
-      print("Mason: invalid condition")
-      return false
-    end
-    local ok, err = self:ValidateVisibility(spec.visibility)
+    local vis = self:CombineRuleVisibility(ruleIds)
+    local ok, err = self:ValidateVisibility(vis)
     if not ok then
       print("Mason: " .. (err or "invalid condition"))
       return false
     end
-    view.ruleId = spec.id
+    view.ruleIds = ruleIds
+    view.ruleId = ruleIds[1]
   end
   local exec = self.executors and self.executors[id]
   if exec and view.visible then
     self:ApplyRule(exec, piece)
   end
   return true
+end
+
+function Mason:SetPieceRule(id, preset)
+  local piece = self:FindPiece(id)
+  if not piece then
+    return false
+  end
+  if preset == "clear" then
+    return self:SetPieceRuleIds(id, nil)
+  end
+  local spec = PRESETS[preset]
+  if not spec then
+    print("Mason: invalid condition")
+    return false
+  end
+  return self:SetPieceRuleIds(id, { spec.id })
 end

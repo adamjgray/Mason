@@ -16,6 +16,8 @@ local USAGE = {
   "/mason list",
   "/mason clear",
   "/mason debug",
+  "/mason debug ghosts",
+  "/mason edit",
   "/mason lock",
   "/mason hide <key|id|spell>",
   "/mason show <key|id|spell>",
@@ -32,11 +34,15 @@ local USAGE = {
   "/mason kb",
   "/mason export kit|layout|full",
   "/mason import",
+  "/mason config",
 }
 
 function Mason:OnInitialize()
   self.executors = {}
   self:InitDB()
+  if self.RegisterOptions then
+    self:RegisterOptions()
+  end
   self:RegisterChatCommand("mason", "OnChatCommand")
 end
 
@@ -60,6 +66,17 @@ function Mason:OnEnable()
   self:QueueIfCombat(function()
     self:ApplyOverrides()
     self:ApplyLayout()
+    if self.InstallBindBagHooks then
+      self:InstallBindBagHooks()
+    end
+    if self.InstallHotkeyFrameHooks then
+      self:InstallHotkeyFrameHooks()
+    end
+    if self.ScheduleSpellbookHotkeys then
+      self:ScheduleSpellbookHotkeys()
+    elseif self.RefreshBlizzardHotkeys then
+      self:RefreshBlizzardHotkeys()
+    end
   end)
 end
 
@@ -83,7 +100,34 @@ function Mason:RegisterRuntimeEvents()
       self:QueueIfCombat(function()
         self:ApplyOverrides()
         self:ApplyLayout()
+        if self.RefreshBlizzardHotkeys then
+          self:RefreshBlizzardHotkeys()
+        end
       end)
+    elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
+      if self.InstallBindBagHooks then
+        self:InstallBindBagHooks()
+      end
+      if self.InstallHotkeyFrameHooks then
+        self:InstallHotkeyFrameHooks()
+      end
+      if self.ScheduleSpellbookHotkeys then
+        self:ScheduleSpellbookHotkeys()
+      elseif self.RequestBlizzardHotkeys then
+        self:RequestBlizzardHotkeys()
+      elseif self.RefreshBlizzardHotkeys then
+        self:QueueIfCombat(function()
+          Mason:RefreshBlizzardHotkeys()
+        end)
+      end
+    elseif event == "SPELLS_CHANGED" then
+      if self.ScheduleSpellbookHotkeys then
+        self:ScheduleSpellbookHotkeys()
+      elseif self.RequestBlizzardHotkeys then
+        self:RequestBlizzardHotkeys()
+      elseif self.RefreshBlizzardHotkeys then
+        self:RefreshBlizzardHotkeys()
+      end
     elseif event == "PLAYER_REGEN_ENABLED" then
       self:FlushCombatQueue()
       if self.PaintRules then
@@ -109,9 +153,27 @@ function Mason:RegisterRuntimeEvents()
       if self.OnMasonPickupSlotChanged then
         self:OnMasonPickupSlotChanged()
       end
-    elseif event == "BAG_UPDATE_DELAYED" then
-      if self.RefreshItemCounts then
+    elseif event == "BAG_UPDATE_DELAYED" or event == "BAG_CONTAINER_UPDATE" then
+      if event == "BAG_UPDATE_DELAYED" and self.RefreshItemCounts then
         self:RefreshItemCounts()
+      end
+      if self.KbWantsRaise and self:KbWantsRaise() then
+        if self.PassBagsRaiseAndPaint then
+          self:PassBagsRaiseAndPaint(true)
+        elseif self.RaiseBindBagFrames then
+          self:RaiseBindBagFrames()
+        elseif self.RaiseBindUndimmedFrames then
+          self:RaiseBindUndimmedFrames()
+        end
+        if self.masonBagNeedButtons and self.ScheduleBagFillWatch then
+          self:ScheduleBagFillWatch()
+        end
+        if self.HookLateFrameOnShow then
+          self:HookLateFrameOnShow(_G.ContainerFrameCombinedBags, "bags")
+        end
+      end
+      if self.RefreshBlizzardHotkeys then
+        self:RefreshBlizzardHotkeys()
       end
     elseif event == "ASSISTED_COMBAT_ACTION_SPELL_CAST" then
       if self.OnAssistedSpellSignal then
@@ -152,6 +214,9 @@ function Mason:RegisterRuntimeEvents()
     end
   end)
   frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+  frame:RegisterEvent("PLAYER_LOGIN")
+  frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+  frame:RegisterEvent("SPELLS_CHANGED")
   frame:RegisterEvent("PLAYER_TARGET_CHANGED")
   frame:RegisterEvent("PLAYER_REGEN_ENABLED")
   frame:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -159,6 +224,7 @@ function Mason:RegisterRuntimeEvents()
   frame:RegisterEvent("CURSOR_CHANGED")
   frame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
   frame:RegisterEvent("BAG_UPDATE_DELAYED")
+  pcall(frame.RegisterEvent, frame, "BAG_CONTAINER_UPDATE")
   pcall(frame.RegisterEvent, frame, "PLAYER_ENTERING_COMBAT")
   pcall(frame.RegisterEvent, frame, "ASSISTED_COMBAT_ACTION_SPELL_CAST")
 end
@@ -239,7 +305,11 @@ end
 function Mason:OnChatCommand(input)
   input = strtrim(input or "")
   if input == "" then
-    self:PrintUsage()
+    if self.OpenOptions then
+      self:OpenOptions()
+    else
+      self:PrintUsage()
+    end
     return
   end
   local cmd, rest = string.match(input, "^(%S+)%s*(.*)$")
@@ -337,6 +407,12 @@ function Mason:OnChatCommand(input)
 
   if cmd == "debug" then
     local token = strtrim(rest)
+    if string.lower(token) == "ghosts" then
+      if self.DebugDockGhosts then
+        self:DebugDockGhosts()
+      end
+      return
+    end
     if token ~= "" then
       local piece = self:ResolvePieceToken(token)
       if not piece then
@@ -406,6 +482,13 @@ function Mason:OnChatCommand(input)
     return
   end
 
+  if cmd == "config" or cmd == "options" then
+    if self.OpenOptions then
+      self:OpenOptions()
+    end
+    return
+  end
+
   if cmd == "kb" then
     if self.ToggleBindMode then
       self:ToggleBindMode()
@@ -435,16 +518,9 @@ function Mason:OnChatCommand(input)
     return
   end
 
-  if cmd == "lock" then
-    if InCombatLockdown() and self:IsLocked() then
-      print("Mason: cannot unlock in combat")
-      return
-    end
-    local locked = not self:IsLocked()
-    local deferred = self:SetLocked(locked)
-    self:Notify(locked and "locked" or "unlocked")
-    if deferred then
-      print("Mason: queued until combat ends")
+  if cmd == "edit" or cmd == "lock" then
+    if self.ToggleEditMode then
+      self:ToggleEditMode()
     end
     return
   end

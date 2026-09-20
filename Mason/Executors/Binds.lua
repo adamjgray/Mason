@@ -43,19 +43,31 @@ function Mason:CreatePiece(fields)
   return piece
 end
 
-function Mason:SetPieceKey(id, key)
+function Mason:SetPieceKey(id, key, overwrite)
   local piece, specID = self:FindPiece(id)
   if not piece then
     return false
   end
-  local pieces = self:GetKit(specID)
   key = NormalizeKey(key)
-  local messages = {}
-  for otherId, other in pairs(pieces) do
-    if otherId ~= id and other.key and NormalizeKey(other.key) == key then
-      messages[#messages + 1] = key .. " moved from " .. Label(other)
-      other.key = nil
+  if piece.key and NormalizeKey(piece.key) == key then
+    return false
+  end
+  local other = self:FindPieceByKey(key, specID)
+  if other and other.id ~= id and not overwrite then
+    if self.ShowBindOverwriteDialog then
+      if InCombatLockdown() then
+        return self:QueueIfCombat(function()
+          Mason:ShowBindOverwriteDialog(id, key, other)
+        end)
+      end
+      self:ShowBindOverwriteDialog(id, key, other)
+      return false
     end
+  end
+  local messages = {}
+  if other and other.id ~= id then
+    messages[#messages + 1] = key .. " moved from " .. Label(other)
+    other.key = nil
   end
   local previous = GetBindingAction(key, true)
   piece.key = key
@@ -64,7 +76,18 @@ function Mason:SetPieceKey(id, key)
     line = line .. " (was " .. previous .. ")"
   end
   messages[#messages + 1] = line
-  return self:ApplyOverridesAndNotify(messages)
+  local deferred
+  if self:IsDebug() then
+    deferred = self:ApplyOverridesAndNotify(messages)
+  else
+    deferred = self:QueueIfCombat(function()
+      self:ApplyOverrides()
+    end)
+  end
+  if self.AfterBindChange then
+    self:AfterBindChange()
+  end
+  return deferred
 end
 
 function Mason:ClearPieceKey(id)
@@ -72,8 +95,34 @@ function Mason:ClearPieceKey(id)
   if not piece then
     return false
   end
+  local messages = {}
+  if piece.key and piece.key ~= "" then
+    messages[#messages + 1] = "unbound " .. Label(piece)
+  end
   piece.key = nil
-  return self:ApplyOverridesAndNotify()
+  local deferred
+  if self:IsDebug() and #messages > 0 then
+    deferred = self:ApplyOverridesAndNotify(messages)
+  else
+    deferred = self:QueueIfCombat(function()
+      self:ApplyOverrides()
+    end)
+  end
+  if self.AfterBindChange then
+    self:AfterBindChange()
+  end
+  return deferred
+end
+
+function Mason:AfterBindChange()
+  if self.RefreshPiecesTable then
+    self:RefreshPiecesTable()
+  end
+  if self.RefreshBlizzardHotkeys then
+    self:QueueIfCombat(function()
+      Mason:RefreshBlizzardHotkeys()
+    end)
+  end
 end
 
 function Mason:DeletePiece(id)
@@ -83,7 +132,7 @@ function Mason:DeletePiece(id)
   end
   local kit = self:GetSpecKit(specID)
   kit.pieces[id] = nil
-  local views = self.db.char and self.db.char.views
+  local views = self:GetViews()
   if views then
     views[id] = nil
   end
@@ -102,7 +151,7 @@ function Mason:ClearCurrentKit()
   for id in pairs(kit.pieces) do
     ids[#ids + 1] = id
     kit.pieces[id] = nil
-    local views = self.db.char and self.db.char.views
+    local views = self:GetViews()
     if views then
       views[id] = nil
     end
