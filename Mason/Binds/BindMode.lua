@@ -712,41 +712,9 @@ function Mason:RaiseBindUndimFrame(frame)
   end
 end
 
-local function LooksBindTarget(f)
-  if not CanUndimFrame(f) then
-    return false
-  end
-  if f.masonPieceId or f.slotIndex or f.spellBookItemIndex or f.spellID or f.spellId or f.macroName or f.GetBagID or f.bagID or f.BagID or f.itemID or f.toyID then
-    return true
-  end
-  if f.IsObjectType and (f:IsObjectType("Button") or f:IsObjectType("CheckButton")) then
-    return true
-  end
-  return false
-end
-
 function Mason:RaiseBindUndimTree(frame, depth)
-  depth = depth or 0
-  if not CanUndimFrame(frame) or depth > 6 then
-    return
-  end
-  self:RaiseBindUndimFrame(frame)
-  if depth == 0 then
-    self:HookBindUndimShow(frame)
-  end
-  if not frame.GetChildren then
-    return
-  end
-  local children = { frame:GetChildren() }
-  for i = 1, #children do
-    local child = children[i]
-    if child and (not child.IsShown or child:IsShown()) then
-      if LooksBindTarget(child) then
-        self:RaiseBindUndimFrame(child)
-      end
-      self:RaiseBindUndimTree(child, depth + 1)
-    end
-  end
+  -- 09aa: never tree-walk BindMode via GetChildren.
+  return
 end
 
 local function EachScrollBoxFrame(box, fn)
@@ -880,7 +848,6 @@ function Mason:RaiseBindKbFrame(frame)
   end
   pcall(function()
     self:RaiseBindUndimFrame(frame)
-    self:HookBindUndimShow(frame)
   end)
 end
 
@@ -1203,7 +1170,7 @@ function Mason:RaiseBindItemButtons(frame)
     if not btn then
       return
     end
-    self:RaiseBindUndimFrame(btn)
+    -- 09aa: never raise item buttons (Show→raise overflow).
     local id = ItemIdFromFrame(btn)
     self:AttachKbHover(btn, "item", id)
     if id then
@@ -1239,13 +1206,12 @@ function Mason:RaiseBindBagFrames()
       return
     end
     pcall(function()
+    -- 09aa: raise top-level bag frame only; never HookBindUndimShow / item raise.
     self:RaiseBindUndimFrame(frame)
-    self:HookBindUndimShow(frame)
     self:HookBagSearchBox(frame)
     self:RaiseBindItemButtons(frame)
     self:HookBagItemParents(frame)
     if frame.ScrollBox then
-      self:RaiseBindUndimFrame(frame.ScrollBox)
       if not frame.ScrollBox.masonBagUpdateHook and frame.ScrollBox.Update then
         frame.ScrollBox.masonBagUpdateHook = true
         hooksecurefunc(frame.ScrollBox, "Update", function()
@@ -1272,10 +1238,6 @@ function Mason:RaiseBindBagFrames()
     local shown = frame and frame.IsShown and frame:IsShown()
     raiseBag(frame, shown and not combined)
   end
-  self:RaiseBindUndimFrame(_G.BagsBar)
-  self:HookBindUndimShow(_G.BagsBar)
-  self:RaiseBindUndimFrame(_G.MainMenuBarBackpackButton)
-  self:HookBindUndimShow(_G.MainMenuBarBackpackButton)
 end
 
 function Mason:KbWantsRaise()
@@ -1375,11 +1337,8 @@ function Mason:HookBagItemParents(frame)
         if id and Mason.PaintKbOverlay then
           Mason:PaintKbOverlay(btn, "item", id)
         end
-        if Mason:KbWantsRaise() and CanUndimFrame(btn) then
-          Mason:RaiseBindUndimFrame(btn)
-          if Mason.AttachBagButtonHover then
-            Mason:AttachBagButtonHover(btn)
-          end
+        if Mason.bindMode and Mason.AttachBagButtonHover then
+          Mason:AttachBagButtonHover(btn)
         end
       end)
     end
@@ -1500,7 +1459,7 @@ function Mason:AttachKbBagHover()
   for i = 1, #buttons do
     local btn = buttons[i]
     local id = a.identity(btn)
-    self:RaiseBindUndimFrame(btn)
+    -- 09aa: never raise item buttons.
     self:AttachKbHover(btn, "item", id)
     if id then
       self:PaintKbOverlay(btn, "item", id)
@@ -2091,58 +2050,51 @@ function Mason:RefreshMacroSelectorIfEmpty()
 end
 
 function Mason:HookBindUndimShow(frame)
-  if not CanUndimFrame(frame) or frame.masonBindRaiseHook then
-    return
-  end
-  frame.masonBindRaiseHook = true
-  if frame.HookScript then
-    frame:HookScript("OnShow", function()
-      if Mason:KbWantsRaise() then
-        Mason:RaiseBindUndimmedFrames()
-      end
-    end)
-  end
+  -- 09aa: never raise from bag/frame Show (breaks Show→raise reentry).
+  return
 end
 
 function Mason:RaiseBindUndimmedFrames()
+  if self.raisingUndim then
+    return
+  end
+  self.raisingUndim = true
   local function raise(frame)
     self:RaiseBindUndimFrame(frame)
-    self:HookBindUndimShow(frame)
   end
-  raise(_G.PlayerSpellsFrame)
-  if _G.PlayerSpellsFrame and _G.PlayerSpellsFrame.SpellBookFrame then
-    raise(_G.PlayerSpellsFrame.SpellBookFrame)
-  end
-  raise(_G.SpellBookFrame)
-  self:RaiseBindMacroFrames()
-  self:RefreshMacroSelectorIfEmpty()
-  self:RaiseBindToyFrames()
-  self:InstallBindBagHooks()
-  self:RaiseBindBagFrames()
-  if self.bindPanel then
-    self.bindUndimRestore = self.bindUndimRestore or {}
-    if not self.bindUndimRestore[self.bindPanel] then
-      self.bindUndimRestore[self.bindPanel] = {
-        strata = self.bindPanel:GetFrameStrata(),
-        level = self.bindPanel:GetFrameLevel() or PANEL_LEVEL,
-      }
-    end
-    self.bindPanel:SetFrameStrata(PANEL_STRATA)
-    self.bindPanel:SetFrameLevel(PANEL_LEVEL)
-  end
-  for id, exec in pairs(self.executors or {}) do
-    if exec and exec.IsShown and exec:IsShown() then
-      raise(exec)
-      local host = self.scaleHosts and self.scaleHosts[id]
-      if host then
-        raise(host)
+  pcall(function()
+    -- 09aa: raise only named top-level frames once.
+    raise(_G.PlayerSpellsFrame)
+    raise(_G.MacroFrame)
+    raise(_G.ContainerFrameCombinedBags or _G.ContainerFrame1)
+    raise(_G.CollectionsJournal)
+    self:InstallBindBagHooks()
+    if self.bindPanel then
+      self.bindUndimRestore = self.bindUndimRestore or {}
+      if not self.bindUndimRestore[self.bindPanel] then
+        self.bindUndimRestore[self.bindPanel] = {
+          strata = self.bindPanel:GetFrameStrata(),
+          level = self.bindPanel:GetFrameLevel() or PANEL_LEVEL,
+        }
       end
-      local handle = self.editHandles and self.editHandles[id]
-      if handle then
-        raise(handle)
+      self.bindPanel:SetFrameStrata(PANEL_STRATA)
+      self.bindPanel:SetFrameLevel(PANEL_LEVEL)
+    end
+    for id, exec in pairs(self.executors or {}) do
+      if exec and exec.IsShown and exec:IsShown() then
+        raise(exec)
+        local host = self.scaleHosts and self.scaleHosts[id]
+        if host then
+          raise(host)
+        end
+        local handle = self.editHandles and self.editHandles[id]
+        if handle then
+          raise(handle)
+        end
       end
     end
-  end
+  end)
+  self.raisingUndim = nil
 end
 
 function Mason:RestoreBindUndimmedFrames()
