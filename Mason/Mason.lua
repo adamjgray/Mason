@@ -157,18 +157,16 @@ function Mason:RegisterRuntimeEvents()
       if event == "BAG_UPDATE_DELAYED" and self.RefreshItemCounts then
         self:RefreshItemCounts()
       end
-      if self.KbWantsRaise and self:KbWantsRaise() then
-        -- 09ab: schedule paint/attach only — never raise from bag events.
-        if self.ScheduleBagFollowup then
-          self:ScheduleBagFollowup()
-        elseif self.RepaintSourceHotkeys then
-          self:RepaintSourceHotkeys()
-        elseif self.PassBagsRaiseAndPaint then
-          self:PassBagsRaiseAndPaint(true)
-        end
-        if self.HookLateFrameOnShow then
-          self:HookLateFrameOnShow(_G.ContainerFrameCombinedBags, "bags")
-        end
+      -- Always-on store paint on bag updates; attach only needed in kb (ScheduleBagFollowup).
+      if self.ScheduleBagFollowup then
+        self:ScheduleBagFollowup()
+      elseif self.RepaintSourceHotkeys then
+        self:RepaintSourceHotkeys()
+      elseif self.PassBagsRaiseAndPaint then
+        self:PassBagsRaiseAndPaint(true)
+      end
+      if self.HookLateFrameOnShow then
+        self:HookLateFrameOnShow(_G.ContainerFrameCombinedBags, "bags")
       end
       if self.RepaintSourceHotkeys then
         self:RepaintSourceHotkeys()

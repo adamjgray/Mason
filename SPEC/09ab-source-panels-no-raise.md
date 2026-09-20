@@ -44,11 +44,13 @@ In `/mason kb`, first open of bags / spellbook / toy box / macros: hover gold, b
 
 - One entry: `RepaintSourceHotkeys` (or a named successor that fully replaces it).
 - Path: clear tracked hosts → `PaintKbAdapter` / `PaintKbOverlay` from `KeyForIdentity` on binding **state data**.
-- **Triggers only:**
-  - kb mode on
+- **Triggers:**
+  - panel Show — deferred `C_Timer.After(0, …)` **once** per open (**not** gated on `/mason kb`)
   - bind/clear via `AfterBindChange` (or equivalent store hook)
-  - panel Show — deferred `C_Timer.After(0, …)` **once** per open
   - page / scroll Update hooks
+  - kb mode on (also triggers repaint; hover/attach only)
+  - reload / login when hooks install
+- Hotkey **display** is always-on from binding state data. `/mason kb` only mutates bindings.
 - **Forbidden:** paint from bind keypress success alone. Bind changes must clear stale + show current from the store.
 
 ### 5. Collectors — named / pool cells only

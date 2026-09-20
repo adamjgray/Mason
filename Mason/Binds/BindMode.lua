@@ -456,18 +456,31 @@ function Mason:BindHitOnFrame(f)
     return { kind = "piece", pieceId = pid }
   end
   local toyID = ToyIdFromFrame(f)
+  if not toyID and f.masonKbKind == "toy" and f.masonKbId then
+    toyID = tonumber(f.masonKbId) or f.masonKbId
+  end
   if toyID then
     return { kind = "toy", itemID = toyID }
   end
   local spellID = SpellIdFromFrame(f)
+  if not spellID and f.masonKbKind == "spell" and f.masonKbId then
+    spellID = tonumber(f.masonKbId) or f.masonKbId
+  end
+  spellID = spellID or f.masonSpellId
   if spellID then
     return { kind = "spell", spellID = spellID }
   end
   local itemID = ItemIdFromFrame(f)
+  if not itemID and f.masonKbKind == "item" and f.masonKbId then
+    itemID = tonumber(f.masonKbId) or f.masonKbId
+  end
   if itemID then
     return { kind = "item", itemID = itemID }
   end
   local macroName = MacroNameFromFrame(f)
+  if not macroName and f.masonKbKind == "macro" and f.masonKbId then
+    macroName = f.masonKbId
+  end
   if macroName then
     return { kind = "macro", macroName = macroName }
   end
@@ -694,12 +707,22 @@ function Mason:ApplyHoverBind(target, chord)
   if not piece then
     return false
   end
-  -- Stamp durable id on paint host BEFORE store repaint (AfterBindChange → clear+paint).
+  -- Stamp durable id on bind owner AND paint cell (icon) before AfterBindChange clear+paint.
   local owner = self.bindHoverOwner or self.bindHoverEnterFrame
   if owner and target.kind and target.kind ~= "piece" then
     local kind, id = HitKindId(target)
     if kind and id then
       StampKbIdentity(owner, kind, id)
+      local paintCell = owner
+      if kind == "spell" then
+        local icon = owner.Button or owner.IconButton or owner.SpellButton or owner.iconButton
+        if icon then
+          paintCell = icon
+        end
+      end
+      if paintCell ~= owner then
+        StampKbIdentity(paintCell, kind, id)
+      end
     end
   end
   self:SetPieceKey(piece.id, chord)
@@ -986,18 +1009,42 @@ end
 
 local function CollectSpellCells()
   local out, seen = {}, {}
+  local function stampedSpellId(f)
+    if not f then
+      return nil
+    end
+    if f.masonKbKind == "spell" and f.masonKbId then
+      return f.masonKbId
+    end
+    return f.masonSpellId
+  end
   local function add(btn)
-    if not btn or seen[btn] or not IsShownCell(btn) then
+    if not btn or not IsShownCell(btn) then
+      return
+    end
+    if seen[btn] then
       return
     end
     local cell = SpellIconFromRow(btn) or btn
-    if seen[cell] then
-      return
-    end
-    local sid = SpellIdFromFrame(btn) or SpellIdFromFrame(cell) or cell.masonSpellId or btn.masonSpellId or btn.masonKbId
+    local sid = stampedSpellId(btn) or stampedSpellId(cell)
+      or SpellIdFromFrame(btn) or SpellIdFromFrame(cell)
     if not sid and btn.GetParent then
       local p = btn:GetParent()
-      sid = SpellIdFromFrame(p)
+      local depth = 0
+      while p and depth < 5 and not sid do
+        sid = stampedSpellId(p) or SpellIdFromFrame(p)
+        p = p.GetParent and p:GetParent()
+        depth = depth + 1
+      end
+    end
+    -- Propagate stamp onto the paint cell even if cell was already emitted.
+    if sid then
+      StampKbIdentity(cell, "spell", sid)
+      StampKbIdentity(btn, "spell", sid)
+    end
+    if seen[cell] then
+      seen[btn] = true
+      return
     end
     if not sid and not LooksSpellCell(cell) and not LooksSpellCell(btn) then
       return
@@ -1005,8 +1052,6 @@ local function CollectSpellCells()
     seen[btn] = true
     seen[cell] = true
     if sid then
-      cell.masonSpellId = sid
-      btn.masonSpellId = sid
       RememberKbCell("spell", cell)
     end
     out[#out + 1] = cell
@@ -1197,29 +1242,59 @@ function Mason:ProbeKbIdentityOnce(kind, button, id)
 end
 
 function Mason:ResolveKbIdentity(btn, wantKind)
-  -- Same identity pipeline as bind: stamped id, then ResolveBindTargetFromFrame parent walk.
+  -- Stamp on self/ancestors, then bind-equivalent ResolveBindTargetFromFrame walk.
   if not btn then
     return nil, nil
   end
-  if btn.masonKbId ~= nil and btn.masonKbId ~= "" then
-    local stampedKind = btn.masonKbKind
-    if not stampedKind and btn.masonSpellId and btn.masonKbId == btn.masonSpellId then
-      stampedKind = "spell"
+  local function readStamp(f)
+    if not f then
+      return nil, nil
     end
-    if stampedKind and KindMatchesWant(stampedKind, wantKind) then
-      return stampedKind, btn.masonKbId
+    if f.masonKbId ~= nil and f.masonKbId ~= "" then
+      local stampedKind = f.masonKbKind
+      if not stampedKind and f.masonSpellId and f.masonKbId == f.masonSpellId then
+        stampedKind = "spell"
+      end
+      if stampedKind and KindMatchesWant(stampedKind, wantKind) then
+        return stampedKind, f.masonKbId
+      end
+    end
+    if wantKind == "spell" and f.masonSpellId then
+      return "spell", f.masonSpellId
+    end
+    return nil, nil
+  end
+  local kind, id = readStamp(btn)
+  if not id then
+    local p = btn.GetParent and btn:GetParent()
+    local depth = 0
+    while p and depth < 6 and not id do
+      kind, id = readStamp(p)
+      p = p.GetParent and p:GetParent()
+      depth = depth + 1
     end
   end
-  if wantKind == "spell" and btn.masonSpellId then
-    return "spell", btn.masonSpellId
+  if id then
+    StampKbIdentity(btn, kind, id)
+    if kind == "spell" then
+      local paintCell = btn.Button or btn.IconButton or btn.SpellButton or btn.iconButton or btn
+      if paintCell ~= btn then
+        StampKbIdentity(paintCell, kind, id)
+      end
+    end
+    return kind, id
   end
   local hit, owner = self:ResolveBindTargetFromFrame(btn)
-  local kind, id = HitKindId(hit)
+  kind, id = HitKindId(hit)
   if kind and id and KindMatchesWant(kind, wantKind) then
     local host = owner or btn
     StampKbIdentity(host, kind, id)
-    if host ~= btn then
-      StampKbIdentity(btn, kind, id)
+    StampKbIdentity(btn, kind, id)
+    if kind == "spell" then
+      local paintCell = btn.Button or btn.IconButton or btn.SpellButton or btn.iconButton
+        or (host and (host.Button or host.IconButton or host.SpellButton or host.iconButton))
+        or btn
+      StampKbIdentity(paintCell, kind, id)
     end
     return kind, id
   end
@@ -1317,10 +1392,8 @@ function Mason:HookBagSearchBox(frame)
   box.masonBindSearchHook = true
   if box.HookScript then
     box:HookScript("OnTextChanged", function()
-      if Mason:KbWantsRaise() then
-        -- Defer: never walk item pools / raise from bag UI callbacks.
-        Mason:ScheduleBagFollowup()
-      end
+      -- Always-on store paint; never walk/raise from bag UI callbacks.
+      Mason:ScheduleBagFollowup()
     end)
   end
 end
@@ -1337,12 +1410,10 @@ function Mason:RaiseBindBagFrames()
       if frame.ScrollBox and not frame.ScrollBox.masonBagUpdateHook and frame.ScrollBox.Update then
         frame.ScrollBox.masonBagUpdateHook = true
         hooksecurefunc(frame.ScrollBox, "Update", function()
-          if Mason.bindMode or (Mason.KbWantsRaise and Mason:KbWantsRaise()) then
-            if Mason.ScheduleBagFollowup then
-              Mason:ScheduleBagFollowup()
-            elseif Mason.AttachKbBagHover then
-              pcall(Mason.AttachKbBagHover, Mason)
-            end
+          if Mason.ScheduleBagFollowup then
+            Mason:ScheduleBagFollowup()
+          elseif Mason.RepaintSourceHotkeys then
+            Mason:RepaintSourceHotkeys()
           end
         end)
       end
@@ -1604,17 +1675,17 @@ function Mason:AttachKbBagHover()
 end
 
 function Mason:PassBagsRaiseAndPaint(fromRetry)
-  -- 09ab: paint/attach only — never raise frames or call ShowBindVeil.
+  -- Always-on store paint; attach hover only in kb. Never raise / ShowBindVeil.
   if self.InstallSourceHoverMixins then
     pcall(self.InstallSourceHoverMixins, self)
   end
-  if self.bindMode and self.AttachKbBagHover then
-    pcall(self.AttachKbBagHover, self)
+  if self.RepaintSourceHotkeys then
+    self:RepaintSourceHotkeys()
   elseif self.PaintBagHotkeys then
     self:PaintBagHotkeys()
   end
-  if self.RepaintSourceHotkeys then
-    self:RepaintSourceHotkeys()
+  if self.bindMode and self.AttachKbBagHover then
+    pcall(self.AttachKbBagHover, self)
   end
 end
 
@@ -1626,9 +1697,7 @@ function Mason:ScheduleBagFollowup()
   self.masonBagFollowup = true
   local function run()
     Mason.masonBagFollowup = nil
-    if not Mason:KbWantsRaise() and not Mason.bindMode then
-      return
-    end
+    -- Always-on store paint (QA r4): not gated on /mason kb.
     if Mason.InstallSourceHoverMixins then
       pcall(Mason.InstallSourceHoverMixins, Mason)
     end
@@ -1645,10 +1714,7 @@ function Mason:ScheduleBagFollowup()
 end
 
 function Mason:OnBagsOpened()
-  -- 09aa: never raise / never walk item pools from bag Show.
-  if not self.bindMode and not (self.KbWantsRaise and self:KbWantsRaise()) then
-    return
-  end
+  -- Always-on store paint; never raise / never walk item pools from bag Show.
   self:ScheduleBagFollowup()
 end
 
@@ -1851,9 +1917,7 @@ function Mason:ScheduleMacroFollowup()
   self.masonMacroFollowup = true
   local function run()
     Mason.masonMacroFollowup = nil
-    if not Mason.bindMode and not (Mason.KbWantsRaise and Mason:KbWantsRaise()) then
-      return
-    end
+    -- Always-on store paint: not gated on /mason kb.
     if not _G.MacroFrame then
       return
     end
@@ -1878,10 +1942,7 @@ function Mason:RaiseBindSpellBook()
 end
 
 function Mason:OnMacroOpened()
-  -- 09ab: never raise MacroFrame. Hook fill signals; paint only when cells exist.
-  if not self.bindMode and not (self.KbWantsRaise and self:KbWantsRaise()) then
-    return
-  end
+  -- Always-on store paint; never raise MacroFrame. Hook fill signals; paint when cells exist.
   if self.HookMacroSelectorFillSignals then
     pcall(self.HookMacroSelectorFillSignals, self)
   end
@@ -2837,21 +2898,36 @@ local function FindButtonIconTexture(btn)
 end
 
 local function MacroHotkeyHost(btn)
+  -- Paint host = icon button (not the tall grid row/col container).
   if not CanUndimFrame(btn) then
     return nil
   end
-  local h = btn.GetHeight and btn:GetHeight() or 0
-  if h > 50 then
-    if FindButtonIconTexture(btn) then
-      return btn
+  local iconBtn = btn.Button or btn.IconButton or btn.iconButton or btn.SpellButton
+  if iconBtn and CanUndimFrame(iconBtn) then
+    return iconBtn
+  end
+  local iconTex = FindButtonIconTexture(btn)
+  if iconTex and iconTex.GetParent then
+    local p = iconTex:GetParent()
+    if p and CanUndimFrame(p) and p ~= btn then
+      local ph = p.GetHeight and p:GetHeight() or 0
+      local pw = p.GetWidth and p:GetWidth() or 0
+      if ph > 0 and ph <= 50 and pw > 0 and pw <= 50 then
+        return p
+      end
     end
+  end
+  local h = btn.GetHeight and btn:GetHeight() or 0
+  local w = btn.GetWidth and btn:GetWidth() or 0
+  if h > 50 or (w > 0 and h > 0 and w > (h * 1.6)) then
     if btn.GetChildren then
       local children = { btn:GetChildren() }
       for i = 1, #children do
         local c = children[i]
         if CanUndimFrame(c) and c.IsObjectType and (c:IsObjectType("Button") or c:IsObjectType("CheckButton")) then
           local ch = c.GetHeight and c:GetHeight() or 0
-          if ch >= 30 and ch <= 50 then
+          local cw = c.GetWidth and c:GetWidth() or 0
+          if ch >= 24 and ch <= 50 and cw >= 24 and cw <= 50 then
             return c
           end
         end
@@ -3089,8 +3165,16 @@ function Mason:EnsureBlizzardHotkeyFont(btn)
   end
   cell.masonHotkey = fs
   btn.masonHotkey = fs
+  -- Parent to icon button; anchor to icon texture (not the grid row).
+  local parent = cell
+  if icon and icon.GetParent then
+    local ip = icon:GetParent()
+    if ip and CanUndimFrame(ip) then
+      parent = ip
+    end
+  end
   if fs.SetParent then
-    fs:SetParent(cell)
+    fs:SetParent(parent)
   end
   local look = self:GetPieceHotkeyLook()
   fs:SetFont(look.font, look.size, look.flags)
@@ -3100,7 +3184,7 @@ function Mason:EnsureBlizzardHotkeyFont(btn)
   if icon then
     fs:SetPoint("TOPRIGHT", icon, "TOPRIGHT", -2, -2)
   else
-    fs:SetPoint("TOPRIGHT", cell, "TOPRIGHT", -2, -2)
+    fs:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -2, -2)
   end
   if fs.SetAlpha then
     fs:SetAlpha(1)
@@ -3191,9 +3275,7 @@ function Mason:ScheduleSpellbookHotkeys()
   self.masonSpellPaintQueued = true
   local function paint()
     Mason.masonSpellPaintQueued = nil
-    if not Mason.bindMode and not (Mason.KbWantsRaise and Mason:KbWantsRaise()) then
-      return
-    end
+    -- Always-on store paint: not gated on /mason kb.
     if Mason.InstallSourceHoverMixins then
       pcall(Mason.InstallSourceHoverMixins, Mason)
     end
