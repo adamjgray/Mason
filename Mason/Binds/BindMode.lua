@@ -905,13 +905,20 @@ function Mason:PaintKbOverlay(button, identityKind, identity)
   end
   if identityKind then
     RememberKbCell(identityKind, button)
+    if identity then
+      StampKbIdentity(button, identityKind, identity)
+    end
   end
   local fs
   if self.EnsureBlizzardHotkeyFont then
-    fs = self:EnsureBlizzardHotkeyFont(button)
+    fs = self:EnsureBlizzardHotkeyFont(button, identityKind)
   end
   if not fs then
     fs = button.masonHotkey
+  end
+  -- Macros: never CreateFontString on the ScrollBox row — require icon host.
+  if not fs and identityKind == "macro" then
+    return
   end
   if not fs then
     if not button.CreateFontString or InCombatLockdown() then
@@ -2085,12 +2092,19 @@ function Mason:InstallBindBagHooks()
       hooksecurefunc(mixin, "OnShow", function(self)
         if kind == "paint" then
           local cell = SpellIconFromRow(self) or self
-          local sid = SpellIdFromFrame(self) or SpellIdFromFrame(cell)
+          local _, sid = Mason:ResolveKbIdentity(cell, "spell")
+          if not sid then
+            _, sid = Mason:ResolveKbIdentity(self, "spell")
+          end
+          sid = sid or SpellIdFromFrame(self) or SpellIdFromFrame(cell)
           if sid then
+            StampKbIdentity(cell, "spell", sid)
             Mason:PaintKbOverlay(cell, "spell", sid)
           else
-            local tid = ToyIdFromFrame(self)
+            local _, tid = Mason:ResolveKbIdentity(cell, "toy")
+            tid = tid or ToyIdFromFrame(self)
             if tid then
+              StampKbIdentity(cell, "toy", tid)
               Mason:PaintKbOverlay(cell, "toy", tid)
             end
           end
@@ -2197,12 +2211,12 @@ function Mason:HookToyKbShow(frame)
   frame.masonKbToyShowAlways = true
   if frame.HookScript then
     frame:HookScript("OnShow", function()
-      if Mason.bindMode and Mason.RepaintSourceHotkeys then
+      if Mason.RequestBlizzardHotkeys then
+        Mason:RequestBlizzardHotkeys()
+      elseif Mason.RepaintSourceHotkeys then
         if C_Timer and C_Timer.After then
           C_Timer.After(0, function()
-            if Mason.bindMode then
-              Mason:RepaintSourceHotkeys()
-            end
+            Mason:RepaintSourceHotkeys()
           end)
         else
           Mason:RepaintSourceHotkeys()
@@ -3117,7 +3131,7 @@ local function IsHotkeyHostWindow(f)
   return false
 end
 
-function Mason:EnsureBlizzardHotkeyFont(btn)
+function Mason:EnsureBlizzardHotkeyFont(btn, identityKind)
   if not btn or IsMasonOwnedFrame(btn) or IsHotkeyHostWindow(btn) then
     return nil
   end
@@ -3130,8 +3144,11 @@ function Mason:EnsureBlizzardHotkeyFont(btn)
   if not btn.CreateFontString then
     return nil
   end
+  local isMacro = (identityKind == "macro")
+    or (btn.masonKbKind == "macro")
+    or (HotkeyKind(btn) == "macro")
   local cell = btn
-  if HotkeyKind(btn) == "macro" then
+  if isMacro then
     cell = MacroHotkeyHost(btn)
     if not cell then
       return nil
