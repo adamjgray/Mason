@@ -1163,20 +1163,9 @@ function Mason:CountBagItemButtons(frame)
 end
 
 function Mason:RaiseBindItemButtons(frame)
-  if not frame then
-    return
-  end
-  EachBagItemButton(frame, function(btn)
-    if not btn then
-      return
-    end
-    -- 09aa: never raise item buttons (Show→raise overflow).
-    local id = ItemIdFromFrame(btn)
-    self:AttachKbHover(btn, "item", id)
-    if id then
-      self:PaintKbOverlay(btn, "item", id)
-    end
-  end)
+  -- 09aa: never raise or walk item buttons from raise paths.
+  -- Paint/attach runs deferred via PassBagsRaiseAndPaint / AttachKbBagHover.
+  return
 end
 
 function Mason:HookBagSearchBox(frame)
@@ -1194,25 +1183,27 @@ function Mason:HookBagSearchBox(frame)
   if box.HookScript then
     box:HookScript("OnTextChanged", function()
       if Mason:KbWantsRaise() then
-        Mason:RaiseBindBagFrames()
+        -- Defer: never walk item pools / raise from bag UI callbacks.
+        Mason:ScheduleBagFollowup()
       end
     end)
   end
 end
 
 function Mason:RaiseBindBagFrames()
-  local function raiseBag(frame, doPrint)
+  if self.raisingUndim then
+    return
+  end
+  local function raiseBag(frame)
     if not frame then
       return
     end
     pcall(function()
-    -- 09aa: raise top-level bag frame only; never HookBindUndimShow / item raise.
-    self:RaiseBindUndimFrame(frame)
-    self:HookBagSearchBox(frame)
-    self:RaiseBindItemButtons(frame)
-    self:HookBagItemParents(frame)
-    if frame.ScrollBox then
-      if not frame.ScrollBox.masonBagUpdateHook and frame.ScrollBox.Update then
+      -- 09aa: top-level bag frame only — no item walk, no Show hooks.
+      self:RaiseBindUndimFrame(frame)
+      self:HookBagSearchBox(frame)
+      self:HookBagItemParents(frame)
+      if frame.ScrollBox and not frame.ScrollBox.masonBagUpdateHook and frame.ScrollBox.Update then
         frame.ScrollBox.masonBagUpdateHook = true
         hooksecurefunc(frame.ScrollBox, "Update", function()
           if Mason:KbWantsRaise() then
@@ -1220,23 +1211,18 @@ function Mason:RaiseBindBagFrames()
           end
         end)
       end
-    end
-    if doPrint then
-      self:DebugPrint(string.format(
-        "Mason: bags raise %s buttons=%d",
-        FrameName(frame) or "?",
-        self:CountBagItemButtons(frame)
-      ))
-    end
     end)
   end
   local combined = _G.ContainerFrameCombinedBags
-  raiseBag(combined, combined ~= nil)
-  local n = NUM_CONTAINER_FRAMES or 13
-  for i = 1, n do
-    local frame = _G["ContainerFrame" .. i]
-    local shown = frame and frame.IsShown and frame:IsShown()
-    raiseBag(frame, shown and not combined)
+  raiseBag(combined)
+  if not combined then
+    local n = NUM_CONTAINER_FRAMES or 13
+    for i = 1, n do
+      local frame = _G["ContainerFrame" .. i]
+      if frame and frame.IsShown and frame:IsShown() then
+        raiseBag(frame)
+      end
+    end
   end
 end
 
@@ -1259,9 +1245,7 @@ function Mason:ReassertBindCatcher()
       catcher:SetPropagateKeyboardInput(true)
     end
   end
-  if self.ShowBindVeil then
-    self:ShowBindVeil()
-  end
+  -- 09aa: never ShowBindVeil here (AttachKbBagHover → Reassert → veil → raise loop).
 end
 
 function Mason:GetSpellBookRoot()
@@ -1451,15 +1435,12 @@ function Mason:AttachKbBagHover()
   if self.InstallBagHoverMixins then
     pcall(self.InstallBagHoverMixins, self)
   end
-  if self.ReassertBindCatcher then
-    pcall(self.ReassertBindCatcher, self)
-  end
+  -- 09aa: do not ReassertBindCatcher (was ShowBindVeil → raise from bag paint).
   local a = KB_ADAPTERS.item
   local buttons = a.buttons()
   for i = 1, #buttons do
     local btn = buttons[i]
     local id = a.identity(btn)
-    -- 09aa: never raise item buttons.
     self:AttachKbHover(btn, "item", id)
     if id then
       self:PaintKbOverlay(btn, "item", id)
@@ -1468,6 +1449,7 @@ function Mason:AttachKbBagHover()
 end
 
 function Mason:PassBagsRaiseAndPaint(fromRetry)
+  -- Paint/attach only — never raise frames or call ShowBindVeil.
   if self.PaintBagHotkeys then
     self:PaintBagHotkeys()
   end
@@ -1495,21 +1477,25 @@ function Mason:ScheduleBagFollowup()
     self.masonBagFollowup = nil
     return
   end
-  C_Timer.After(0.1, function()
+  C_Timer.After(0, function()
     Mason.masonBagFollowup = nil
+    if not Mason:KbWantsRaise() and not Mason.bindMode then
+      return
+    end
+    -- Outside bag Show: top-level raise once, then paint cells.
+    if Mason.KbWantsRaise and Mason:KbWantsRaise() and Mason.RaiseBindBagFrames then
+      pcall(Mason.RaiseBindBagFrames, Mason)
+    end
     Mason:PassBagsRaiseAndPaint(true)
   end)
 end
 
 function Mason:OnBagsOpened()
-  if self.PassBagsRaiseAndPaint then
-    pcall(self.PassBagsRaiseAndPaint, self)
-  elseif self.RaiseBindBagFrames then
-    pcall(self.RaiseBindBagFrames, self)
+  -- 09aa: never raise / never walk item pools from bag Show.
+  if not self.bindMode and not (self.KbWantsRaise and self:KbWantsRaise()) then
+    return
   end
-  if self.bindMode and self.AttachKbBagHover then
-    pcall(self.AttachKbBagHover, self)
-  end
+  self:ScheduleBagFollowup()
 end
 
 function Mason:CountMacroButtons()
@@ -2146,18 +2132,23 @@ function Mason:RestoreBindUndimmedFrames()
 end
 
 function Mason:ShowBindVeil()
-  local veil = self:EnsureBindVeil()
-  if not veil then
+  if self.showingBindVeil then
     return
   end
-  veil:EnableMouse(false)
-  veil:SetFrameStrata(BIND_VEIL_STRATA)
-  veil:SetFrameLevel(BIND_VEIL_LEVEL)
-  veil:Show()
-  self:RaiseBindUndimmedFrames()
-  if self.bindMode and self.AttachKbBagHover then
-    pcall(self.AttachKbBagHover, self)
-  end
+  self.showingBindVeil = true
+  pcall(function()
+    local veil = self:EnsureBindVeil()
+    if not veil then
+      return
+    end
+    veil:EnableMouse(false)
+    veil:SetFrameStrata(BIND_VEIL_STRATA)
+    veil:SetFrameLevel(BIND_VEIL_LEVEL)
+    veil:Show()
+    self:RaiseBindUndimmedFrames()
+    -- 09aa: do not AttachKbBagHover here (bag cell walk / catcher reentry).
+  end)
+  self.showingBindVeil = nil
 end
 
 function Mason:HideBindVeil()
@@ -2364,8 +2355,9 @@ function Mason:SetBindMode(on)
     self:ShowBindVeil()
     self:InstallBindBagHooks()
     self:RaiseBindBagFrames()
-    if self.CountAllBagButtons and self:CountAllBagButtons() > 0 and self.AttachKbBagHover then
-      pcall(self.AttachKbBagHover, self)
+    -- Defer bag cell paint/attach off the kb-on / Show stack.
+    if self.ScheduleBagFollowup then
+      self:ScheduleBagFollowup()
     end
     if not _G.ContainerFrameCombinedBags or not _G.MacroFrame then
       self.kbWantsRaise = true

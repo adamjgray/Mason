@@ -158,12 +158,10 @@ function Mason:RegisterRuntimeEvents()
         self:RefreshItemCounts()
       end
       if self.KbWantsRaise and self:KbWantsRaise() then
-        if self.PassBagsRaiseAndPaint then
+        if self.ScheduleBagFollowup then
+          self:ScheduleBagFollowup()
+        elseif self.PassBagsRaiseAndPaint then
           self:PassBagsRaiseAndPaint(true)
-        elseif self.RaiseBindBagFrames then
-          self:RaiseBindBagFrames()
-        elseif self.RaiseBindUndimmedFrames then
-          self:RaiseBindUndimmedFrames()
         end
         if self.masonBagNeedButtons and self.ScheduleBagFillWatch then
           self:ScheduleBagFillWatch()
