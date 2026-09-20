@@ -551,6 +551,84 @@ function Mason:BindChordFromKey(key)
   return table.concat(parts, "-")
 end
 
+local kbCellRegistry = {
+  spell = {},
+  item = {},
+  toy = {},
+  macro = {},
+}
+
+local function RememberKbCell(kind, btn)
+  if not kind or not btn then
+    return
+  end
+  local bucket = kbCellRegistry[kind]
+  if not bucket then
+    kbCellRegistry[kind] = {}
+    bucket = kbCellRegistry[kind]
+  end
+  bucket[btn] = true
+end
+
+local function EachRegistryCell(kind, fn)
+  local bucket = kbCellRegistry[kind]
+  if not bucket then
+    return
+  end
+  for btn in pairs(bucket) do
+    if btn then
+      fn(btn)
+    end
+  end
+end
+
+local function StampKbIdentity(btn, kind, id)
+  if not btn or id == nil or id == "" then
+    return
+  end
+  RememberKbCell(kind, btn)
+  btn.masonKbKind = kind
+  btn.masonKbId = id
+  if kind == "spell" then
+    btn.masonSpellId = id
+  end
+end
+
+local function HitKindId(hit)
+  if not hit then
+    return nil, nil
+  end
+  if hit.kind == "spell" then
+    return "spell", hit.spellID
+  end
+  if hit.kind == "toy" then
+    return "toy", hit.itemID
+  end
+  if hit.kind == "item" then
+    return "item", hit.itemID
+  end
+  if hit.kind == "macro" then
+    return "macro", hit.macroName
+  end
+  return nil, nil
+end
+
+local function KindMatchesWant(kind, wantKind)
+  if not wantKind then
+    return true
+  end
+  if kind == wantKind then
+    return true
+  end
+  if wantKind == "item" and kind == "toy" then
+    return true
+  end
+  if wantKind == "toy" and kind == "item" then
+    return true
+  end
+  return false
+end
+
 function Mason:ApplyHoverBind(target, chord)
   if not target or not chord then
     return false
@@ -687,85 +765,6 @@ local function CanUndimFrame(frame)
   end
   return true
 end
-
-local kbCellRegistry = {
-  spell = {},
-  item = {},
-  toy = {},
-  macro = {},
-}
-
-local function RememberKbCell(kind, btn)
-  if not kind or not btn then
-    return
-  end
-  local bucket = kbCellRegistry[kind]
-  if not bucket then
-    kbCellRegistry[kind] = {}
-    bucket = kbCellRegistry[kind]
-  end
-  bucket[btn] = true
-end
-
-local function EachRegistryCell(kind, fn)
-  local bucket = kbCellRegistry[kind]
-  if not bucket then
-    return
-  end
-  for btn in pairs(bucket) do
-    if btn then
-      fn(btn)
-    end
-  end
-end
-
-local function StampKbIdentity(btn, kind, id)
-  if not btn or id == nil or id == "" then
-    return
-  end
-  RememberKbCell(kind, btn)
-  btn.masonKbKind = kind
-  btn.masonKbId = id
-  if kind == "spell" then
-    btn.masonSpellId = id
-  end
-end
-
-local function HitKindId(hit)
-  if not hit then
-    return nil, nil
-  end
-  if hit.kind == "spell" then
-    return "spell", hit.spellID
-  end
-  if hit.kind == "toy" then
-    return "toy", hit.itemID
-  end
-  if hit.kind == "item" then
-    return "item", hit.itemID
-  end
-  if hit.kind == "macro" then
-    return "macro", hit.macroName
-  end
-  return nil, nil
-end
-
-local function KindMatchesWant(kind, wantKind)
-  if not wantKind then
-    return true
-  end
-  if kind == wantKind then
-    return true
-  end
-  if wantKind == "item" and kind == "toy" then
-    return true
-  end
-  if wantKind == "toy" and kind == "item" then
-    return true
-  end
-  return false
-end
-
 
 function Mason:RaiseBindUndimFrame(frame)
   -- 09ab: zero Blizzard SetFrameStrata/Raise for undim. Mason-owned frames
@@ -1780,12 +1779,18 @@ function Mason:HookMacroSelectorFillSignals()
     sel.ScrollBox.masonHotkeyRecycle = true
     if sel.ScrollBox.RegisterCallback then
       pcall(sel.ScrollBox.RegisterCallback, sel.ScrollBox, "OnAcquiredFrame", function(_, btn)
-        if Mason.PaintKbOverlay then
-          local id = MacroNameFromFrame(btn)
-          Mason:PaintKbOverlay(btn, "macro", id)
-          if Mason.bindMode then
-            Mason:AttachKbHover(btn, "macro", id)
+        local _, id = Mason:ResolveKbIdentity(btn, "macro")
+        if not id then
+          id = MacroNameFromFrame(btn)
+          if id then
+            StampKbIdentity(btn, "macro", id)
           end
+        end
+        if id and Mason.PaintKbOverlay then
+          Mason:PaintKbOverlay(btn, "macro", id)
+        end
+        if Mason.bindMode then
+          Mason:AttachKbHover(btn, "macro", id)
         end
       end)
       pcall(sel.ScrollBox.RegisterCallback, sel.ScrollBox, "OnScroll", function()
