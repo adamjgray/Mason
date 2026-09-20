@@ -158,19 +158,21 @@ function Mason:RegisterRuntimeEvents()
         self:RefreshItemCounts()
       end
       if self.KbWantsRaise and self:KbWantsRaise() then
+        -- 09ab: schedule paint/attach only — never raise from bag events.
         if self.ScheduleBagFollowup then
           self:ScheduleBagFollowup()
+        elseif self.RepaintSourceHotkeys then
+          self:RepaintSourceHotkeys()
         elseif self.PassBagsRaiseAndPaint then
           self:PassBagsRaiseAndPaint(true)
-        end
-        if self.masonBagNeedButtons and self.ScheduleBagFillWatch then
-          self:ScheduleBagFillWatch()
         end
         if self.HookLateFrameOnShow then
           self:HookLateFrameOnShow(_G.ContainerFrameCombinedBags, "bags")
         end
       end
-      if self.RefreshBlizzardHotkeys then
+      if self.RepaintSourceHotkeys then
+        self:RepaintSourceHotkeys()
+      elseif self.RefreshBlizzardHotkeys then
         self:RefreshBlizzardHotkeys()
       end
     elseif event == "ASSISTED_COMBAT_ACTION_SPELL_CAST" then

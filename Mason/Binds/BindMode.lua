@@ -22,9 +22,9 @@ local PANEL_STRATA = "FULLSCREEN_DIALOG"
 local CATCHER_LEVEL = 50
 local PANEL_LEVEL = 200
 local BIND_VEIL_ALPHA = 0.45
-local BIND_VEIL_STRATA = "HIGH"
-local BIND_VEIL_LEVEL = 20
-local UNDIM_LEVEL = 30
+local BIND_VEIL_STRATA = "LOW"
+local BIND_VEIL_LEVEL = 0
+-- 09ab: no Blizzard undim raise; UNDIM_LEVEL unused
 
 local function SkinMasonPanel(frame)
   if not frame or not frame.SetBackdrop then
@@ -681,35 +681,9 @@ local function CanUndimFrame(frame)
 end
 
 function Mason:RaiseBindUndimFrame(frame)
-  if not CanUndimFrame(frame) then
-    return
-  end
-  self.bindUndimRestore = self.bindUndimRestore or {}
-  if not self.bindUndimRestore[frame] then
-    local strata, level
-    if frame.GetFrameStrata then
-      strata = frame:GetFrameStrata()
-    end
-    if frame.GetFrameLevel then
-      level = frame:GetFrameLevel() or 0
-    end
-    self.bindUndimRestore[frame] = {
-      strata = strata,
-      level = level or 0,
-    }
-  end
-  local veilLevel = (self.bindVeil and self.bindVeil:GetFrameLevel()) or BIND_VEIL_LEVEL
-  local want = math.max(UNDIM_LEVEL, veilLevel + 10)
-  if frame.GetFrameStrata and frame.SetFrameStrata and frame:GetFrameStrata() ~= PANEL_STRATA then
-    pcall(frame.SetFrameStrata, frame, PANEL_STRATA)
-  end
-  local cur = (frame.GetFrameLevel and frame:GetFrameLevel()) or 0
-  if cur < want and frame.SetFrameLevel then
-    pcall(frame.SetFrameLevel, frame, want)
-  end
-  if frame.Raise then
-    pcall(frame.Raise, frame)
-  end
+  -- 09ab: zero Blizzard SetFrameStrata/Raise for undim. Mason-owned frames
+  -- use their own prepare paths (catcher/panel/glow).
+  return
 end
 
 function Mason:RaiseBindUndimTree(frame, depth)
@@ -830,6 +804,8 @@ function Mason:PaintKbOverlay(button, identityKind, identity)
     fs:SetPoint("TOPRIGHT", icon, "TOPRIGHT", -2, -2)
     button.masonHotkey = fs
   end
+  self.blizzardHotkeyButtons = self.blizzardHotkeyButtons or {}
+  self.blizzardHotkeyButtons[button] = true
   local key = self:KeyForIdentity(identityKind, identity)
   fs:SetText(key)
   if key ~= "" then
@@ -843,12 +819,8 @@ function Mason:PaintKbOverlay(button, identityKind, identity)
 end
 
 function Mason:RaiseBindKbFrame(frame)
-  if not frame then
-    return
-  end
-  pcall(function()
-    self:RaiseBindUndimFrame(frame)
-  end)
+  -- 09ab: never Raise Blizzard kb chrome.
+  return
 end
 
 local function IsShownCell(btn)
@@ -1191,36 +1163,36 @@ function Mason:HookBagSearchBox(frame)
 end
 
 function Mason:RaiseBindBagFrames()
-  if self.raisingUndim then
-    return
-  end
-  local function raiseBag(frame)
+  -- 09ab: CombinedBags hooks/paint schedule only — never Raise bag frames.
+  local function hookBag(frame)
     if not frame then
       return
     end
     pcall(function()
-      -- 09aa: top-level bag frame only — no item walk, no Show hooks.
-      self:RaiseBindUndimFrame(frame)
       self:HookBagSearchBox(frame)
       self:HookBagItemParents(frame)
       if frame.ScrollBox and not frame.ScrollBox.masonBagUpdateHook and frame.ScrollBox.Update then
         frame.ScrollBox.masonBagUpdateHook = true
         hooksecurefunc(frame.ScrollBox, "Update", function()
-          if Mason:KbWantsRaise() then
-            Mason:ScheduleBagFollowup()
+          if Mason.bindMode or (Mason.KbWantsRaise and Mason:KbWantsRaise()) then
+            if Mason.RepaintSourceHotkeys then
+              Mason:RepaintSourceHotkeys()
+            else
+              Mason:ScheduleBagFollowup()
+            end
           end
         end)
       end
     end)
   end
   local combined = _G.ContainerFrameCombinedBags
-  raiseBag(combined)
+  hookBag(combined)
   if not combined then
     local n = NUM_CONTAINER_FRAMES or 13
     for i = 1, n do
       local frame = _G["ContainerFrame" .. i]
       if frame and frame.IsShown and frame:IsShown() then
-        raiseBag(frame)
+        hookBag(frame)
       end
     end
   end
@@ -1330,26 +1302,9 @@ function Mason:HookBagItemParents(frame)
 end
 
 function Mason:ScheduleBagFillWatch()
-  if self.masonBagFillWatch or not (C_Timer and C_Timer.After) then
-    return
-  end
-  self.masonBagFillWatch = true
-  self.masonBagFillStart = (GetTime and GetTime()) or 0
-  local delays = { 0.1, 0.2, 0.35, 0.5, 0.75, 1.0 }
-  for i = 1, #delays do
-    local d = delays[i]
-    C_Timer.After(d, function()
-      if not Mason:KbWantsRaise() then
-        Mason.masonBagFillWatch = nil
-        return
-      end
-      Mason:PassBagsRaiseAndPaint(true)
-      local n = Mason:CountAllBagButtons()
-      local elapsed = ((GetTime and GetTime()) or 0) - (Mason.masonBagFillStart or 0)
-      if n > 0 or elapsed >= 1 then
-        Mason.masonBagFillWatch = nil
-      end
-    end)
+  -- 09ab: no multi-delay bag fill pulse. One After(0) probe via ScheduleBagFollowup.
+  if self.ScheduleBagFollowup then
+    self:ScheduleBagFollowup()
   end
 end
 
@@ -1395,12 +1350,14 @@ function Mason:AttachBagButtonHover(btn)
   self:AttachKbHover(btn, "item", ItemIdFromFrame(btn))
 end
 
-function Mason:InstallBagHoverMixins()
-  if self.masonBagHoverMixins then
+function Mason:InstallSourceHoverMixins()
+  -- 09ab: one mixin install per source kind; gold glow only; no per-open Raise.
+  if self.masonSourceHoverMixins then
     return
   end
+  self.masonSourceHoverMixins = true
   self.masonBagHoverMixins = true
-  local function hookEnter(mixin)
+  local function hookEnter(mixin, kind, idFn)
     if not mixin then
       return
     end
@@ -1409,8 +1366,9 @@ function Mason:InstallBagHoverMixins()
         if not Mason.bindMode or not btn then
           return
         end
+        local id = idFn and idFn(btn) or nil
         if Mason.AttachKbHover then
-          Mason:AttachKbHover(btn, "item", ItemIdFromFrame(btn))
+          Mason:AttachKbHover(btn, kind, id)
         end
         Mason:ShowBindHoverOnFrame(btn)
       end)
@@ -1424,15 +1382,25 @@ function Mason:InstallBagHoverMixins()
       end)
     end
   end
-  hookEnter(_G.ContainerFrameItemButtonMixin)
-  hookEnter(_G.ContainerFrameItemElementMixin)
+  hookEnter(_G.ContainerFrameItemButtonMixin, "item", ItemIdFromFrame)
+  hookEnter(_G.ContainerFrameItemElementMixin, "item", ItemIdFromFrame)
+  hookEnter(_G.SpellBookItemMixin, "spell", SpellIdFromFrame)
+  hookEnter(_G.SpellBookItemButtonMixin, "spell", SpellIdFromFrame)
+  hookEnter(_G.ToySpellButtonMixin, "toy", ToyIdFromFrame)
+  hookEnter(_G.MacroButtonMixin, "macro", MacroNameFromFrame)
+end
+
+function Mason:InstallBagHoverMixins()
+  self:InstallSourceHoverMixins()
 end
 
 function Mason:AttachKbBagHover()
   if not self.bindMode then
     return
   end
-  if self.InstallBagHoverMixins then
+  if self.InstallSourceHoverMixins then
+    pcall(self.InstallSourceHoverMixins, self)
+  elseif self.InstallBagHoverMixins then
     pcall(self.InstallBagHoverMixins, self)
   end
   -- 09aa: do not ReassertBindCatcher (was ShowBindVeil → raise from bag paint).
@@ -1449,32 +1417,31 @@ function Mason:AttachKbBagHover()
 end
 
 function Mason:PassBagsRaiseAndPaint(fromRetry)
-  -- Paint/attach only — never raise frames or call ShowBindVeil.
-  if self.PaintBagHotkeys then
+  -- 09ab: paint/attach only — never raise frames or call ShowBindVeil.
+  if self.InstallSourceHoverMixins then
+    pcall(self.InstallSourceHoverMixins, self)
+  end
+  if self.RepaintSourceHotkeys then
+    self:RepaintSourceHotkeys()
+  elseif self.PaintBagHotkeys then
     self:PaintBagHotkeys()
   end
-  if self.bindMode then
-    local n = self:CountAllBagButtons()
-    if n == 0 then
-      self.masonBagNeedButtons = true
-      self:ScheduleBagFillWatch()
-    else
-      self.masonBagNeedButtons = nil
-      self.masonBagFillWatch = nil
-      if self.AttachKbBagHover then
-        pcall(self.AttachKbBagHover, self)
-      end
-    end
+  if self.bindMode and self.AttachKbBagHover then
+    pcall(self.AttachKbBagHover, self)
   end
 end
 
 function Mason:ScheduleBagFollowup()
+  -- 09ab: deferred After(0) once per open — paint/attach only, no raise waves.
   if self.masonBagFollowup then
     return
   end
   self.masonBagFollowup = true
   if not (C_Timer and C_Timer.After) then
     self.masonBagFollowup = nil
+    if self.PassBagsRaiseAndPaint then
+      self:PassBagsRaiseAndPaint(true)
+    end
     return
   end
   C_Timer.After(0, function()
@@ -1482,9 +1449,8 @@ function Mason:ScheduleBagFollowup()
     if not Mason:KbWantsRaise() and not Mason.bindMode then
       return
     end
-    -- Outside bag Show: top-level raise once, then paint cells.
-    if Mason.KbWantsRaise and Mason:KbWantsRaise() and Mason.RaiseBindBagFrames then
-      pcall(Mason.RaiseBindBagFrames, Mason)
+    if Mason.RaiseBindBagFrames then
+      pcall(Mason.RaiseBindBagFrames, Mason) -- hooks only (no Raise)
     end
     Mason:PassBagsRaiseAndPaint(true)
   end)
@@ -1553,33 +1519,21 @@ function Mason:RefreshMacroSelector()
 end
 
 function Mason:PassMacroRaiseAndPaint()
+  -- 09ab: never Raise MacroFrame/Selector (raise blanks grid). Paint from store only.
   self:HookMacroSelectorFillSignals()
-  if self.KbWantsRaise and self:KbWantsRaise() then
-    self:RefreshMacroSelector()
-    self:RefreshMacroSelectorIfEmpty()
-    self:RaiseBindMacroFrames()
+  if self.InstallSourceHoverMixins then
+    pcall(self.InstallSourceHoverMixins, self)
   end
-  self:PaintMacroHotkeys()
+  if self.RepaintSourceHotkeys then
+    self:RepaintSourceHotkeys()
+  else
+    self:PaintMacroHotkeys()
+  end
   local n = self:CountMacroButtons()
   if n == 0 then
     self.masonMacroNeedButtons = true
   else
     self.masonMacroNeedButtons = nil
-    if self.KbWantsRaise and self:KbWantsRaise() then
-      if self.ReassertBindCatcher then
-        pcall(self.ReassertBindCatcher, self)
-      end
-      self:RaiseBindMacroFrames()
-    end
-  end
-  local mf = _G.MacroFrame
-  local shown = mf and mf.IsShown and mf:IsShown()
-  if self.KbWantsRaise and self:KbWantsRaise() then
-    self:DebugPrint(string.format(
-      "Mason: macro raise shown=%s buttons=%d",
-      tostring(not not shown),
-      n
-    ))
   end
   return n
 end
@@ -1609,22 +1563,24 @@ function Mason:HookMacroSelectorFillSignals()
     sel.masonFillSignals = true
     if sel.SetTab then
       hooksecurefunc(sel, "SetTab", function()
-        Mason:PaintMacroHotkeys()
-        if Mason.KbWantsRaise and Mason:KbWantsRaise() then
-          Mason:RaiseBindMacroFrames()
+        if Mason.RepaintSourceHotkeys then
+          Mason:RepaintSourceHotkeys()
+        else
+          Mason:PaintMacroHotkeys()
         end
       end)
     end
     if sel.TabSystem and sel.TabSystem.SetTab then
       hooksecurefunc(sel.TabSystem, "SetTab", function()
-        Mason:PaintMacroHotkeys()
-        if Mason.KbWantsRaise and Mason:KbWantsRaise() then
-          Mason:RaiseBindMacroFrames()
+        if Mason.RepaintSourceHotkeys then
+          Mason:RepaintSourceHotkeys()
+        else
+          Mason:PaintMacroHotkeys()
         end
       end)
     end
   end
-  if sel.ScrollBox and not sel.ScrollBox.masonHotkeyRecycle then
+  if sel and sel.ScrollBox and not sel.ScrollBox.masonHotkeyRecycle then
     sel.ScrollBox.masonHotkeyRecycle = true
     if sel.ScrollBox.RegisterCallback then
       pcall(sel.ScrollBox.RegisterCallback, sel.ScrollBox, "OnAcquiredFrame", function(_, btn)
@@ -1637,13 +1593,21 @@ function Mason:HookMacroSelectorFillSignals()
         end
       end)
       pcall(sel.ScrollBox.RegisterCallback, sel.ScrollBox, "OnScroll", function()
-        Mason:PaintMacroHotkeys()
+        if Mason.RepaintSourceHotkeys then
+          Mason:RepaintSourceHotkeys()
+        else
+          Mason:PaintMacroHotkeys()
+        end
       end)
     end
     if sel.ScrollBox.HookScript then
       pcall(function()
         sel.ScrollBox:HookScript("OnMouseWheel", function()
-          Mason:PaintMacroHotkeys()
+          if Mason.RepaintSourceHotkeys then
+            Mason:RepaintSourceHotkeys()
+          else
+            Mason:PaintMacroHotkeys()
+          end
         end)
       end)
     end
@@ -1652,56 +1616,59 @@ function Mason:HookMacroSelectorFillSignals()
     self.masonMacroTabHook = true
     if type(_G.MacroFrame_SetAccountMacros) == "function" then
       hooksecurefunc("MacroFrame_SetAccountMacros", function()
-        Mason:PaintMacroHotkeys()
+        if Mason.RepaintSourceHotkeys then
+          Mason:RepaintSourceHotkeys()
+        else
+          Mason:PaintMacroHotkeys()
+        end
       end)
     end
     if type(_G.MacroFrame_SetCharacterMacros) == "function" then
       hooksecurefunc("MacroFrame_SetCharacterMacros", function()
-        Mason:PaintMacroHotkeys()
+        if Mason.RepaintSourceHotkeys then
+          Mason:RepaintSourceHotkeys()
+        else
+          Mason:PaintMacroHotkeys()
+        end
       end)
     end
   end
 end
 
 function Mason:ScheduleMacroFollowup()
-  if self.masonMacroFollowup or not (C_Timer and C_Timer.After) then
+  -- 09ab: one After(0) paint — no multi-delay raise/paint spam.
+  if self.masonMacroFollowup then
     return
   end
   self.masonMacroFollowup = true
-  local t0 = (GetTime and GetTime()) or 0
-  local delays = { 0, 0.15, 0.4, 0.8, 1.2, 1.6, 2.0 }
-  for i = 1, #delays do
-    local d = delays[i]
-    C_Timer.After(d, function()
-      local n = Mason:PassMacroRaiseAndPaint()
-      local elapsed = ((GetTime and GetTime()) or 0) - t0
-      if (n and n > 0) or elapsed >= 2 then
-        Mason.masonMacroFollowup = nil
-      end
-    end)
+  local function run()
+    Mason.masonMacroFollowup = nil
+    if not Mason.bindMode and not (Mason.KbWantsRaise and Mason:KbWantsRaise()) then
+      return
+    end
+    Mason:PassMacroRaiseAndPaint()
+  end
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0, run)
+  else
+    run()
   end
 end
 
 function Mason:RaiseBindSpellBook()
-  if not (self.KbWantsRaise and self:KbWantsRaise()) then
-    return
-  end
-  if self.ReassertBindCatcher then
-    pcall(self.ReassertBindCatcher, self)
-  end
-  local ps = _G.PlayerSpellsFrame
-  self:RaiseBindKbFrame(ps)
-  self:RaiseBindKbFrame(ps and (ps.SpellBookFrame or ps.SpellBook))
-  self:RaiseBindKbFrame(self.masonSpellBookFrame)
-  self:RaiseBindKbFrame(_G.SpellBookFrame)
+  -- 09ab: never Raise spellbook chrome; paint/hover via RepaintSourceHotkeys + mixins.
+  return
 end
 
 function Mason:OnMacroOpened()
-  if self.PassMacroRaiseAndPaint then
-    pcall(self.PassMacroRaiseAndPaint, self)
+  -- 09ab: schedule one deferred paint; never raise MacroFrame.
+  if not self.bindMode and not (self.KbWantsRaise and self:KbWantsRaise()) then
+    return
   end
   if self.ScheduleMacroFollowup then
     pcall(self.ScheduleMacroFollowup, self)
+  elseif self.PassMacroRaiseAndPaint then
+    pcall(self.PassMacroRaiseAndPaint, self)
   end
 end
 
@@ -1717,20 +1684,16 @@ function Mason:HookLateFrameOnShow(frame, kind)
       elseif kind == "macro" then
         Mason:OnMacroOpened()
       elseif kind == "toy" then
-        if Mason.KbWantsRaise and Mason:KbWantsRaise() and Mason.RaiseBindToyFrames then
-          pcall(Mason.RaiseBindToyFrames, Mason)
-        end
-        if Mason.RefreshBlizzardHotkeys then
-          pcall(Mason.RefreshBlizzardHotkeys, Mason)
+        if Mason.RequestBlizzardHotkeys then
+          Mason:RequestBlizzardHotkeys()
+        elseif Mason.RepaintSourceHotkeys then
+          Mason:RepaintSourceHotkeys()
         end
       elseif kind == "spell" then
-        if Mason.RaiseBindSpellBook then
-          pcall(Mason.RaiseBindSpellBook, Mason)
-        end
         if Mason.ScheduleSpellbookHotkeys then
           Mason:ScheduleSpellbookHotkeys()
-        elseif Mason.RefreshBlizzardHotkeys then
-          Mason:RefreshBlizzardHotkeys()
+        elseif Mason.RepaintSourceHotkeys then
+          Mason:RepaintSourceHotkeys()
         end
       end
     end)
@@ -1738,7 +1701,9 @@ function Mason:HookLateFrameOnShow(frame, kind)
 end
 
 function Mason:InstallBindBagHooks()
-  if self.InstallBagHoverMixins then
+  if self.InstallSourceHoverMixins then
+    pcall(self.InstallSourceHoverMixins, self)
+  elseif self.InstallBagHoverMixins then
     pcall(self.InstallBagHoverMixins, self)
   end
   if self.masonBindBagHooks then
@@ -1802,9 +1767,6 @@ function Mason:InstallBindBagHooks()
   end
   if PlayerSpellsFrameMixin and PlayerSpellsFrameMixin.OnShow then
     hooksecurefunc(PlayerSpellsFrameMixin, "OnShow", function()
-      if Mason.RaiseBindSpellBook then
-        pcall(Mason.RaiseBindSpellBook, Mason)
-      end
       if Mason.ScheduleSpellbookHotkeys then
         pcall(Mason.ScheduleSpellbookHotkeys, Mason)
       end
@@ -1812,9 +1774,6 @@ function Mason:InstallBindBagHooks()
   end
   if type(_G.TogglePlayerSpells) == "function" then
     hooksecurefunc("TogglePlayerSpells", function()
-      if Mason.RaiseBindSpellBook then
-        pcall(Mason.RaiseBindSpellBook, Mason)
-      end
       if Mason.ScheduleSpellbookHotkeys then
         pcall(Mason.ScheduleSpellbookHotkeys, Mason)
       end
@@ -1822,9 +1781,6 @@ function Mason:InstallBindBagHooks()
   end
   if type(_G.ToggleSpellBook) == "function" then
     hooksecurefunc("ToggleSpellBook", function()
-      if Mason.RaiseBindSpellBook then
-        pcall(Mason.RaiseBindSpellBook, Mason)
-      end
       if Mason.ScheduleSpellbookHotkeys then
         pcall(Mason.ScheduleSpellbookHotkeys, Mason)
       end
@@ -1832,9 +1788,6 @@ function Mason:InstallBindBagHooks()
   end
   if type(_G.ToggleCollectionsJournal) == "function" then
     hooksecurefunc("ToggleCollectionsJournal", function()
-      if Mason.KbWantsRaise and Mason:KbWantsRaise() and Mason.RaiseBindToyFrames then
-        pcall(Mason.RaiseBindToyFrames, Mason)
-      end
       if Mason.RequestBlizzardHotkeys then
         pcall(Mason.RequestBlizzardHotkeys, Mason)
       end
@@ -1875,18 +1828,12 @@ function Mason:InstallBindBagHooks()
           pcall(Mason.OnMacroOpened, Mason)
         end
       elseif frame == _G.ToyBox or name == "ToyBox" or frame == _G.CollectionsJournal or name == "CollectionsJournal" then
-        if Mason.KbWantsRaise and Mason:KbWantsRaise() and Mason.RaiseBindToyFrames then
-          pcall(Mason.RaiseBindToyFrames, Mason)
-        end
         if Mason.RequestBlizzardHotkeys then
           pcall(Mason.RequestBlizzardHotkeys, Mason)
         end
       elseif name == "PlayerSpellsFrame" or name == "SpellBookFrame" then
         if Mason.RememberSpellBookFrame then
           pcall(Mason.RememberSpellBookFrame, Mason, frame)
-        end
-        if Mason.RaiseBindSpellBook then
-          pcall(Mason.RaiseBindSpellBook, Mason)
         end
         if Mason.ScheduleSpellbookHotkeys then
           pcall(Mason.ScheduleSpellbookHotkeys, Mason)
@@ -1906,29 +1853,18 @@ function Mason:InstallBindBagHooks()
 end
 
 function Mason:RaiseBindMacroFrames()
+  -- 09ab: never Raise MacroFrame/Selector/ScrollBox (raise blanks the grid).
   local mf = _G.MacroFrame
-  self:RaiseBindKbFrame(mf)
-  self:RaiseBindKbFrame(_G.MacroFrameScrollFrame)
-  self:RaiseBindKbFrame(_G.MacroButtonScrollFrame)
-  if mf then
-    local sel = mf.MacroSelector
-    self:RaiseBindKbFrame(sel)
-    if sel then
-      self:RaiseBindKbFrame(sel.ScrollBox)
-      self:RaiseBindKbFrame(sel.ScrollBar)
-      EachScrollBoxFrame(sel.ScrollBox, function(btn)
-        Mason:RaiseBindKbFrame(btn)
-      end)
-      self:HookMacroKbShow(sel)
-      if sel.ScrollBox then
-        self:HookMacroKbShow(sel.ScrollBox)
-      end
-    end
-    self:HookMacroKbShow(mf)
+  if not mf then
+    return
   end
-  local maxMacro = (MAX_ACCOUNT_MACROS or 120) + (MAX_CHARACTER_MACROS or 18)
-  for i = 1, maxMacro do
-    self:RaiseBindKbFrame(_G["MacroButton" .. i])
+  self:HookMacroKbShow(mf)
+  local sel = mf.MacroSelector
+  if sel then
+    self:HookMacroKbShow(sel)
+    if sel.ScrollBox then
+      self:HookMacroKbShow(sel.ScrollBox)
+    end
   end
 end
 
@@ -1945,20 +1881,18 @@ function Mason:HookMacroKbShow(frame)
 end
 
 function Mason:RaiseBindToyFrames()
-  local box = _G.ToyBox
-  pcall(function()
-    self:RaiseBindUndimFrame(box)
-  end)
-  for i = 1, 18 do
-    pcall(function()
-      self:RaiseBindUndimFrame(_G["ToySpellButton" .. i])
-    end)
+  -- 09ab: paint/attach only — never Raise toy chrome.
+  if self.InstallSourceHoverMixins then
+    pcall(self.InstallSourceHoverMixins, self)
+  end
+  if self.RepaintSourceHotkeys then
+    self:RepaintSourceHotkeys()
+    return
   end
   local a = KB_ADAPTERS.toy
   local buttons = a.buttons()
   for i = 1, #buttons do
     local btn = buttons[i]
-    self:RaiseBindUndimFrame(btn)
     local id = a.identity(btn)
     if self.bindMode then
       self:AttachKbHover(btn, "toy", id)
@@ -1976,10 +1910,17 @@ function Mason:HookToyKbShow(frame)
   frame.masonKbToyShowAlways = true
   if frame.HookScript then
     frame:HookScript("OnShow", function()
-      if Mason.bindMode then
-        Mason:RaiseBindToyFrames()
-      end
-      if Mason.RefreshBlizzardHotkeys then
+      if Mason.bindMode and Mason.RepaintSourceHotkeys then
+        if C_Timer and C_Timer.After then
+          C_Timer.After(0, function()
+            if Mason.bindMode then
+              Mason:RepaintSourceHotkeys()
+            end
+          end)
+        else
+          Mason:RepaintSourceHotkeys()
+        end
+      elseif Mason.RefreshBlizzardHotkeys then
         Mason:RefreshBlizzardHotkeys()
       end
     end)
@@ -2041,97 +1982,20 @@ function Mason:HookBindUndimShow(frame)
 end
 
 function Mason:RaiseBindUndimmedFrames()
-  if self.raisingUndim then
-    return
-  end
-  self.raisingUndim = true
-  local function raise(frame)
-    self:RaiseBindUndimFrame(frame)
-  end
-  pcall(function()
-    -- 09aa: raise only named top-level frames once.
-    raise(_G.PlayerSpellsFrame)
-    raise(_G.MacroFrame)
-    raise(_G.ContainerFrameCombinedBags or _G.ContainerFrame1)
-    raise(_G.CollectionsJournal)
+  -- 09ab: never undim via Blizzard SetFrameStrata/Raise. Mason panel/catcher
+  -- prepare paths own their strata; veil is dim-only at LOW.
+  if self.InstallBindBagHooks then
     self:InstallBindBagHooks()
-    if self.bindPanel then
-      self.bindUndimRestore = self.bindUndimRestore or {}
-      if not self.bindUndimRestore[self.bindPanel] then
-        self.bindUndimRestore[self.bindPanel] = {
-          strata = self.bindPanel:GetFrameStrata(),
-          level = self.bindPanel:GetFrameLevel() or PANEL_LEVEL,
-        }
-      end
-      self.bindPanel:SetFrameStrata(PANEL_STRATA)
-      self.bindPanel:SetFrameLevel(PANEL_LEVEL)
-    end
-    for id, exec in pairs(self.executors or {}) do
-      if exec and exec.IsShown and exec:IsShown() then
-        raise(exec)
-        local host = self.scaleHosts and self.scaleHosts[id]
-        if host then
-          raise(host)
-        end
-        local handle = self.editHandles and self.editHandles[id]
-        if handle then
-          raise(handle)
-        end
-      end
-    end
-  end)
-  self.raisingUndim = nil
+  end
 end
 
 function Mason:RestoreBindUndimmedFrames()
-  local saved = self.bindUndimRestore
-  if not saved then
-    return
-  end
-  local function restoreOne(frame)
-    local info = frame and saved[frame]
-    if not info or not frame then
-      return
-    end
-    if frame.SetFrameStrata then
-      pcall(frame.SetFrameStrata, frame, info.strata or "MEDIUM")
-    end
-    if frame.SetFrameLevel then
-      pcall(frame.SetFrameLevel, frame, info.level or 0)
-    end
-  end
-  for frame in pairs(saved) do
-    restoreOne(frame)
-  end
-  restoreOne(_G.ContainerFrameCombinedBags)
-  restoreOne(_G.BagsBar)
-  restoreOne(_G.MainMenuBarBackpackButton)
-  local n = NUM_CONTAINER_FRAMES or 13
-  for i = 1, n do
-    local frame = _G["ContainerFrame" .. i]
-    restoreOne(frame)
-    if frame then
-      if frame.Items then
-        for _, btn in pairs(frame.Items) do
-          restoreOne(btn)
-        end
-      end
-      EachScrollBoxFrame(frame.ScrollBox, restoreOne)
-    end
-  end
-  local bags = _G.ContainerFrameCombinedBags
-  if bags then
-    if bags.Items then
-      for _, btn in pairs(bags.Items) do
-        restoreOne(btn)
-      end
-    end
-    EachScrollBoxFrame(bags.ScrollBox, restoreOne)
-  end
+  -- 09ab: no Blizzard strata restore (undim raise path deleted).
   self.bindUndimRestore = nil
 end
 
 function Mason:ShowBindVeil()
+  -- 09ab: veil dim only — never Raise Blizzard frames to "undim".
   if self.showingBindVeil then
     return
   end
@@ -2145,8 +2009,9 @@ function Mason:ShowBindVeil()
     veil:SetFrameStrata(BIND_VEIL_STRATA)
     veil:SetFrameLevel(BIND_VEIL_LEVEL)
     veil:Show()
-    self:RaiseBindUndimmedFrames()
-    -- 09aa: do not AttachKbBagHover here (bag cell walk / catcher reentry).
+    if self.InstallBindBagHooks then
+      self:InstallBindBagHooks()
+    end
   end)
   self.showingBindVeil = nil
 end
@@ -2269,62 +2134,8 @@ function Mason:OnBindCatcherKey(catcher, key)
 end
 
 function Mason:WatchLazyBindFrames()
-  if self.masonLazyBindWatch then
-    return
-  end
-  local watch = CreateFrame("Frame")
-  local elapsed = 0
-  local pulse = 0
-  self.masonLazyBindWatch = watch
-  watch:SetScript("OnUpdate", function(self, dt)
-    if not Mason.bindMode then
-      self:SetScript("OnUpdate", nil)
-      Mason.masonLazyBindWatch = nil
-      return
-    end
-    dt = dt or 0
-    elapsed = elapsed + dt
-    pulse = pulse + dt
-    if pulse < 0.1 and elapsed <= 8 then
-      return
-    end
-    pulse = 0
-    local bags = _G.ContainerFrameCombinedBags
-    local macros = _G.MacroFrame
-    Mason:HookLateFrameOnShow(bags, "bags")
-    Mason:HookLateFrameOnShow(macros, "macro")
-    if macros and macros.IsShown and macros:IsShown() then
-      Mason:RaiseBindMacroFrames()
-      if Mason.masonMacroNeedButtons then
-        local n = Mason:CountMacroButtons()
-        if n and n > 0 then
-          Mason.masonMacroNeedButtons = nil
-          Mason:PaintMacroHotkeys()
-        end
-      end
-    elseif macros then
-      Mason:RaiseBindMacroFrames()
-      Mason:HookMacroKbShow(macros)
-      if macros.MacroSelector then
-        Mason:HookMacroKbShow(macros.MacroSelector)
-      end
-    end
-    if _G.ToyBox then
-      Mason:RaiseBindToyFrames()
-    end
-    Mason:HookLateFrameOnShow(_G.PlayerSpellsFrame, "spell")
-    local ps = _G.PlayerSpellsFrame
-    if ps and ps.SpellBookFrame then
-      Mason:HookLateFrameOnShow(ps.SpellBookFrame, "spell")
-    end
-    if ps and ps.IsShown and ps:IsShown() and Mason.RaiseBindSpellBook then
-      pcall(Mason.RaiseBindSpellBook, Mason)
-    end
-    if elapsed > 8 then
-      self:SetScript("OnUpdate", nil)
-      Mason.masonLazyBindWatch = nil
-    end
-  end)
+  -- 09ab: deleted — no OnUpdate pulse that re-raises/re-paints Blizzard chrome.
+  return
 end
 
 function Mason:SetBindMode(on)
@@ -2354,15 +2165,26 @@ function Mason:SetBindMode(on)
     self:ShowBindPanel()
     self:ShowBindVeil()
     self:InstallBindBagHooks()
-    self:RaiseBindBagFrames()
-    -- Defer bag cell paint/attach off the kb-on / Show stack.
-    if self.ScheduleBagFollowup then
+    if self.InstallSourceHoverMixins then
+      pcall(self.InstallSourceHoverMixins, self)
+    end
+    -- Hooks only (no Raise); defer store paint once.
+    if self.RaiseBindBagFrames then
+      pcall(self.RaiseBindBagFrames, self)
+    end
+    if self.RepaintSourceHotkeys then
+      if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+          if Mason.bindMode then
+            Mason:RepaintSourceHotkeys()
+          end
+        end)
+      else
+        self:RepaintSourceHotkeys()
+      end
+    elseif self.ScheduleBagFollowup then
       self:ScheduleBagFollowup()
     end
-    if not _G.ContainerFrameCombinedBags or not _G.MacroFrame then
-      self.kbWantsRaise = true
-    end
-    self:WatchLazyBindFrames()
     self:DebugPrint("Mason: keybind on")
   else
     self.bindHoverEnterFrame = nil
@@ -3107,17 +2929,31 @@ function Mason:WalkBlizzardHotkeys(frame, depth)
 end
 
 function Mason:ScheduleSpellbookHotkeys()
+  -- 09ab: one deferred After(0) paint from store — no multi-delay waves.
+  if self.masonSpellPaintQueued then
+    return
+  end
+  self.masonSpellPaintQueued = true
   local function paint()
-    if Mason.PaintSpellbookHotkeys then
+    Mason.masonSpellPaintQueued = nil
+    if not Mason.bindMode and not (Mason.KbWantsRaise and Mason:KbWantsRaise()) then
+      return
+    end
+    if Mason.InstallSourceHoverMixins then
+      pcall(Mason.InstallSourceHoverMixins, Mason)
+    end
+    if Mason.RepaintSourceHotkeys then
+      Mason:RepaintSourceHotkeys()
+    elseif Mason.PaintSpellbookHotkeys then
       Mason:PaintSpellbookHotkeys()
     elseif Mason.RefreshBlizzardHotkeys then
       Mason:RefreshBlizzardHotkeys()
     end
   end
-  paint()
   if C_Timer and C_Timer.After then
     C_Timer.After(0, paint)
-    C_Timer.After(0.15, paint)
+  else
+    paint()
   end
 end
 
@@ -3128,7 +2964,9 @@ function Mason:RequestBlizzardHotkeys()
   self.masonHotkeyQueued = true
   local run = function()
     Mason.masonHotkeyQueued = nil
-    if Mason.RefreshBlizzardHotkeys then
+    if Mason.RepaintSourceHotkeys then
+      Mason:RepaintSourceHotkeys()
+    elseif Mason.RefreshBlizzardHotkeys then
       Mason:RefreshBlizzardHotkeys()
     end
   end
@@ -3137,6 +2975,41 @@ function Mason:RequestBlizzardHotkeys()
   else
     run()
   end
+end
+
+function Mason:ClearSourceHotkeys()
+  local tracked = self.blizzardHotkeyButtons
+  if not tracked then
+    return
+  end
+  for btn in pairs(tracked) do
+    local fs = btn and btn.masonHotkey
+    if fs then
+      fs:SetText("")
+      fs:Hide()
+    end
+  end
+  self.blizzardHotkeyButtons = {}
+end
+
+function Mason:RepaintSourceHotkeys()
+  -- 09ab: single store painter — clear tracked hosts, then paint from KeyForIdentity.
+  if InCombatLockdown() then
+    return self:QueueIfCombat(function()
+      Mason:RepaintSourceHotkeys()
+    end)
+  end
+  if self.InstallHotkeyFrameHooks then
+    self:InstallHotkeyFrameHooks()
+  end
+  if self.InstallSourceHoverMixins then
+    pcall(self.InstallSourceHoverMixins, self)
+  end
+  self:ClearSourceHotkeys()
+  self:PaintKbAdapter("spell")
+  self:PaintKbAdapter("item")
+  self:PaintKbAdapter("toy")
+  self:PaintKbAdapter("macro")
 end
 
 function Mason:PaintBagHotkeys()
@@ -3161,12 +3034,12 @@ function Mason:HookHotkeyRecycle()
     self.masonToyHotkeyRecycle = true
     if type(_G.ToyBox_OnMouseWheel) == "function" then
       hooksecurefunc("ToyBox_OnMouseWheel", function()
-        Mason:PaintToyHotkeys()
+        if Mason.RepaintSourceHotkeys then Mason:RepaintSourceHotkeys() else Mason:PaintToyHotkeys() end
       end)
     end
     if type(_G.ToyBox_UpdateButtons) == "function" then
       hooksecurefunc("ToyBox_UpdateButtons", function()
-        Mason:PaintToyHotkeys()
+        if Mason.RepaintSourceHotkeys then Mason:RepaintSourceHotkeys() else Mason:PaintToyHotkeys() end
       end)
     end
     if type(_G.ToySpellButton_UpdateButton) == "function" then
@@ -3189,7 +3062,7 @@ function Mason:HookHotkeyRecycle()
     if box.PagingFrame and box.PagingFrame.SetCurrentPage and not box.PagingFrame.masonHotkeyPage then
       box.PagingFrame.masonHotkeyPage = true
       hooksecurefunc(box.PagingFrame, "SetCurrentPage", function()
-        Mason:PaintToyHotkeys()
+        if Mason.RepaintSourceHotkeys then Mason:RepaintSourceHotkeys() else Mason:PaintToyHotkeys() end
       end)
     end
     if box.ScrollBox and not box.ScrollBox.masonHotkeyRecycle then
@@ -3201,7 +3074,7 @@ function Mason:HookHotkeyRecycle()
           end
         end)
         pcall(box.ScrollBox.RegisterCallback, box.ScrollBox, "OnScroll", function()
-          Mason:PaintToyHotkeys()
+          if Mason.RepaintSourceHotkeys then Mason:RepaintSourceHotkeys() else Mason:PaintToyHotkeys() end
         end)
       end
     end
@@ -3209,7 +3082,7 @@ function Mason:HookHotkeyRecycle()
       box.masonHotkeyWheel = true
       pcall(function()
         box:HookScript("OnMouseWheel", function()
-          Mason:PaintToyHotkeys()
+          if Mason.RepaintSourceHotkeys then Mason:RepaintSourceHotkeys() else Mason:PaintToyHotkeys() end
         end)
       end)
     end
@@ -3221,17 +3094,17 @@ function Mason:HookHotkeyRecycle()
     frame.masonSpellPageHotkey = true
     if frame.SetToPage then
       hooksecurefunc(frame, "SetToPage", function()
-        Mason:PaintSpellbookHotkeys()
+        if Mason.RepaintSourceHotkeys then Mason:RepaintSourceHotkeys() else Mason:PaintSpellbookHotkeys() end
       end)
     end
     if frame.GoToPage then
       hooksecurefunc(frame, "GoToPage", function()
-        Mason:PaintSpellbookHotkeys()
+        if Mason.RepaintSourceHotkeys then Mason:RepaintSourceHotkeys() else Mason:PaintSpellbookHotkeys() end
       end)
     end
     if frame.PagingFrame and frame.PagingFrame.SetCurrentPage then
       hooksecurefunc(frame.PagingFrame, "SetCurrentPage", function()
-        Mason:PaintSpellbookHotkeys()
+        if Mason.RepaintSourceHotkeys then Mason:RepaintSourceHotkeys() else Mason:PaintSpellbookHotkeys() end
       end)
     end
     if frame.ScrollBox and frame.ScrollBox.RegisterCallback and not frame.ScrollBox.masonSpellAcquire then
@@ -3287,7 +3160,7 @@ function Mason:InstallHotkeyFrameHooks()
     if sb.TabSystem and sb.TabSystem.SetTab and not sb.masonTabHotkeyHook then
       sb.masonTabHotkeyHook = true
       hooksecurefunc(sb.TabSystem, "SetTab", function()
-        Mason:PaintSpellbookHotkeys()
+        if Mason.RepaintSourceHotkeys then Mason:RepaintSourceHotkeys() else Mason:PaintSpellbookHotkeys() end
       end)
     end
   end
@@ -3312,17 +3185,18 @@ function Mason:HookBlizzardHotkeyShow(frame)
     frame:HookScript("OnShow", function()
       local name = frame.GetName and frame:GetName() or ""
       if frame == _G.PlayerSpellsFrame or frame == (_G.PlayerSpellsFrame and _G.PlayerSpellsFrame.SpellBookFrame) or name == "SpellBookFrame" or string.find(name, "SpellBook", 1, true) or string.find(name, "PlayerSpells", 1, true) then
-        if Mason.RaiseBindSpellBook then
-          pcall(Mason.RaiseBindSpellBook, Mason)
-        end
         Mason:ScheduleSpellbookHotkeys()
       elseif frame == _G.ContainerFrameCombinedBags or name == "ContainerFrameCombinedBags" or (name and string.find(name, "ContainerFrame", 1, true)) then
         if Mason.OnBagsOpened then
           pcall(Mason.OnBagsOpened, Mason)
-        else
+        elseif Mason.RepaintSourceHotkeys then
+          Mason:RepaintSourceHotkeys()
+        elseif Mason.RefreshBlizzardHotkeys then
           Mason:RefreshBlizzardHotkeys()
         end
-      else
+      elseif Mason.RepaintSourceHotkeys then
+        Mason:RepaintSourceHotkeys()
+      elseif Mason.RefreshBlizzardHotkeys then
         Mason:RefreshBlizzardHotkeys()
       end
     end)
@@ -3330,67 +3204,27 @@ function Mason:HookBlizzardHotkeyShow(frame)
 end
 
 function Mason:RefreshBlizzardHotkeys()
+  -- 09ab / 09x: one painter wins — delegate to RepaintSourceHotkeys.
+  if self.RepaintSourceHotkeys then
+    return self:RepaintSourceHotkeys()
+  end
   if InCombatLockdown() then
     return self:QueueIfCombat(function()
       Mason:RefreshBlizzardHotkeys()
     end)
   end
   self:InstallHotkeyFrameHooks()
-  local tracked = self.blizzardHotkeyButtons
-  if tracked then
-    for btn in pairs(tracked) do
-      if btn.masonHotkey then
-        btn.masonHotkey:SetText("")
-        btn.masonHotkey:Hide()
-      end
-    end
+  self:ClearSourceHotkeys()
+  if self.PaintSpellbookHotkeys then
+    self:PaintSpellbookHotkeys()
   end
-  local function visit(frame)
-    self:HookBlizzardHotkeyShow(frame)
-    self:WalkBlizzardHotkeys(frame, 0)
+  if self.PaintMacroHotkeys then
+    self:PaintMacroHotkeys()
   end
-  pcall(function()
-    if Mason.PaintSpellbookHotkeys then
-      Mason:PaintSpellbookHotkeys()
-    else
-      visit(_G.PlayerSpellsFrame)
-      if _G.PlayerSpellsFrame and _G.PlayerSpellsFrame.SpellBookFrame then
-        local sb = _G.PlayerSpellsFrame.SpellBookFrame
-        visit(sb)
-        visit(sb.PagedSpellsFrame)
-        visit(sb.SpellBookPagedSpellsFrame)
-      end
-      visit(_G.SpellBookFrame)
-    end
-  end)
-  pcall(function()
-    if Mason.PaintMacroHotkeys then
-      Mason:PaintMacroHotkeys()
-    end
-  end)
-  pcall(function()
-    if Mason.PaintToyHotkeys then
-      Mason:PaintToyHotkeys()
-    else
-      visit(_G.ToyBox)
-      if _G.CollectionsJournal and _G.CollectionsJournal.ToyBox then
-        visit(_G.CollectionsJournal.ToyBox)
-      end
-      for i = 1, 18 do
-        local b = _G["ToySpellButton" .. i]
-        Mason:PaintKbOverlay(b, "toy", b and (b.itemID or ToyIdFromFrame(b)))
-      end
-    end
-  end)
-  if Mason.PaintBagHotkeys then
-    Mason:PaintBagHotkeys()
-  else
-    visit(_G.ContainerFrameCombinedBags)
-    local n = NUM_CONTAINER_FRAMES or 13
-    for i = 1, n do
-      visit(_G["ContainerFrame" .. i])
-    end
+  if self.PaintToyHotkeys then
+    self:PaintToyHotkeys()
   end
-  self:HookBlizzardHotkeyShow(_G.PlayerSpellsFrame)
-  self:HookBlizzardHotkeyShow(_G.CollectionsJournal)
+  if self.PaintBagHotkeys then
+    self:PaintBagHotkeys()
+  end
 end
