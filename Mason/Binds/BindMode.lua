@@ -162,19 +162,50 @@ local function SpellIdFromFrame(f)
     end
     return nil
   end
+  local function idFromSpellInfo(info)
+    if type(info) ~= "table" then
+      return nil
+    end
+    local id = fromValue(info.spellID or info.spellId)
+    if id then
+      return id
+    end
+    -- actionID is the spellID only for Spell items (not flyouts/PvpTalents/etc).
+    if Enum and Enum.SpellBookItemType and info.itemType ~= nil then
+      if info.itemType ~= Enum.SpellBookItemType.Spell then
+        return nil
+      end
+    end
+    return fromValue(info.actionID)
+  end
   local function fromTable(t, depth)
     if type(t) ~= "table" or (depth or 0) > 2 then
       return nil
     end
-    local id = fromValue(t.spellID or t.spellId)
+    local id = fromValue(t.spellID or t.spellId) or idFromSpellInfo(t)
     if id then
       return id
     end
     if type(t.spellBookItemInfo) == "table" then
-      id = fromValue(t.spellBookItemInfo.spellID or t.spellBookItemInfo.spellId)
+      id = idFromSpellInfo(t.spellBookItemInfo)
       if id then
         return id
       end
+    end
+    return nil
+  end
+  local function fromSlotBank(slot, bank)
+    slot = tonumber(slot)
+    if not slot or not C_SpellBook or not C_SpellBook.GetSpellBookItemInfo then
+      return nil
+    end
+    if bank == nil and Enum and Enum.SpellBookSpellBank then
+      bank = Enum.SpellBookSpellBank.Player
+    end
+    -- Retail API: GetSpellBookItemInfo(slotIndex, spellBank)
+    local ok, info = pcall(C_SpellBook.GetSpellBookItemInfo, slot, bank)
+    if ok and type(info) == "table" then
+      return idFromSpellInfo(info)
     end
     return nil
   end
@@ -186,11 +217,28 @@ local function SpellIdFromFrame(f)
   if id then
     return id
   end
+  -- Frame fields (SpellBookItemMixin) — required after /reload with no session stamps.
+  id = fromSlotBank(f.slotIndex or f.spellBookItemIndex or f.index, f.spellBank or f.bank)
+  if id then
+    return id
+  end
   if f.GetElementData then
     local ok, data = pcall(f.GetElementData, f)
     if ok then
       if type(data) == "table" then
         id = fromTable(data, 0) or fromTable(data.elementData, 1)
+          or fromTable(data.spellBookItemInfo, 0)
+          or fromValue(data.spellID or data.spellId)
+        if id then
+          return id
+        end
+        local slot = data.slotIndex or data.index or data.spellBookItemIndex or data.spellBookItemID
+        local bank = data.spellBank or data.bank
+        if type(data.elementData) == "table" then
+          slot = slot or data.elementData.slotIndex or data.elementData.index or data.elementData.spellBookItemIndex
+          bank = bank or data.elementData.spellBank or data.elementData.bank
+        end
+        id = fromSlotBank(slot, bank)
         if id then
           return id
         end
@@ -210,7 +258,7 @@ local function SpellIdFromFrame(f)
   if bookItem and type(bookItem) ~= "number" and C_SpellBook and C_SpellBook.GetSpellBookItemInfo then
     local ok, info = pcall(C_SpellBook.GetSpellBookItemInfo, bookItem)
     if ok and type(info) == "table" then
-      id = fromValue(info.spellID or info.spellId)
+      id = idFromSpellInfo(info)
       if id then
         return id
       end
@@ -235,7 +283,7 @@ local function SpellIdFromFrame(f)
     end
   end
   if type(f.spellBookItemInfo) == "table" then
-    id = tonumber(f.spellBookItemInfo.spellID or f.spellBookItemInfo.spellId)
+    id = idFromSpellInfo(f.spellBookItemInfo)
     if id and id > 0 then
       return id
     end
@@ -394,8 +442,11 @@ local function ToyIdFromFrame(f)
   if not f then
     return nil
   end
-  local id = tonumber(f.toyID or f.toyId or f.itemID or f.itemId)
-  if id and id > 0 then
+  local function acceptToyId(id)
+    id = tonumber(id)
+    if not id or id <= 0 then
+      return nil
+    end
     if PlayerHasToy and PlayerHasToy(id) then
       return id
     end
@@ -411,28 +462,60 @@ local function ToyIdFromFrame(f)
         return id
       end
     end
+    -- Still return: store KeyForIdentity needs the raw itemID after /reload.
+    return id
+  end
+  local id = acceptToyId(f.toyID or f.toyId or f.itemID or f.itemId)
+  if id then
+    return id
+  end
+  local index = tonumber(f.index or f.itemIndex or f.toyIndex)
+  if index and C_ToyBox and C_ToyBox.GetToyFromIndex then
+    local ok, toyId = pcall(C_ToyBox.GetToyFromIndex, index)
+    if ok then
+      id = acceptToyId(toyId)
+      if id then
+        return id
+      end
+    end
   end
   if f.GetElementData then
     local ok, data = pcall(f.GetElementData, f)
     if ok and type(data) == "table" then
-      id = tonumber(data.toyID or data.toyId or data.itemID or data.itemId)
-      if id and id > 0 then
+      id = acceptToyId(data.toyID or data.toyId or data.itemID or data.itemId)
+      if id then
         return id
+      end
+      if type(data.elementData) == "table" then
+        id = acceptToyId(data.elementData.toyID or data.elementData.toyId or data.elementData.itemID or data.elementData.itemId)
+        if id then
+          return id
+        end
+      end
+      index = tonumber(data.index or data.itemIndex or data.toyIndex)
+      if index and C_ToyBox and C_ToyBox.GetToyFromIndex then
+        local ok2, toyId = pcall(C_ToyBox.GetToyFromIndex, index)
+        if ok2 then
+          id = acceptToyId(toyId)
+          if id then
+            return id
+          end
+        end
       end
     end
   end
   local name = FrameName(f)
   if name and string.find(string.lower(name), "toy", 1, true) then
-    id = tonumber(f.itemID or f.itemId)
-    if id and id > 0 then
+    id = acceptToyId(f.itemID or f.itemId)
+    if id then
       return id
     end
   end
   if f.GetParent then
     local p = f:GetParent()
     if p and p ~= f then
-      id = tonumber(p.toyID or p.toyId or p.itemID or p.itemId)
-      if id and id > 0 and PlayerHasToy and PlayerHasToy(id) then
+      id = acceptToyId(p.toyID or p.toyId or p.itemID or p.itemId)
+      if id then
         return id
       end
     end
@@ -606,6 +689,33 @@ local function StampKbIdentity(btn, kind, id)
     btn.masonSpellId = id
   end
 end
+
+local function ClearKbIdentity(btn)
+  if not btn then
+    return
+  end
+  btn.masonKbKind = nil
+  btn.masonKbId = nil
+  btn.masonSpellId = nil
+end
+
+local function ClearMacroHotkeyVisual(btn)
+  if not btn then
+    return
+  end
+  local fs = btn.masonHotkey
+  if fs then
+    if fs.SetText then
+      fs:SetText("")
+    end
+    if fs.Hide then
+      fs:Hide()
+    end
+  end
+end
+
+-- Forward declare: PaintKbAdapter paints macros onto the icon host.
+local MacroHotkeyHost
 
 local function HitKindId(hit)
   if not hit then
@@ -1126,6 +1236,10 @@ local function CollectToyCells()
       return
     end
     seen[btn] = true
+    local tid = ToyIdFromFrame(btn)
+    if tid then
+      StampKbIdentity(btn, "toy", tid)
+    end
     RememberKbCell("toy", btn)
     out[#out + 1] = btn
   end
@@ -1186,7 +1300,17 @@ local KB_ADAPTERS = {
       if not button then
         return nil
       end
-      return SpellIdFromFrame(button) or button.masonSpellId
+      local sid = SpellIdFromFrame(button) or button.masonSpellId
+      if not sid then
+        local cell = SpellIconFromRow(button)
+        if cell and cell ~= button then
+          sid = SpellIdFromFrame(cell)
+        end
+      end
+      if not sid and button.GetParent then
+        sid = SpellIdFromFrame(button:GetParent())
+      end
+      return sid
     end,
   },
   item = {
@@ -1249,9 +1373,66 @@ function Mason:ProbeKbIdentityOnce(kind, button, id)
 end
 
 function Mason:ResolveKbIdentity(btn, wantKind)
-  -- Stamp on self/ancestors, then bind-equivalent ResolveBindTargetFromFrame walk.
+  -- Live frame identity first (ScrollBox recycle-safe), then stamps, then bind Resolve walk.
   if not btn then
     return nil, nil
+  end
+  local function stampPaint(kind, id)
+    StampKbIdentity(btn, kind, id)
+    if kind == "spell" then
+      local paintCell = btn.Button or btn.IconButton or btn.SpellButton or btn.iconButton
+      if paintCell and paintCell ~= btn then
+        StampKbIdentity(paintCell, kind, id)
+      end
+    end
+  end
+  local function liveIdentity()
+    if not wantKind or wantKind == "macro" then
+      local n = MacroNameFromFrame(btn)
+      if (not n or n == "") and btn.GetParent then
+        n = MacroNameFromFrame(btn:GetParent())
+      end
+      if (not n or n == "") then
+        local icon = btn.Button or btn.IconButton or btn.iconButton
+        if icon then
+          n = MacroNameFromFrame(icon)
+        end
+      end
+      if n and n ~= "" then
+        return "macro", n
+      end
+    end
+    if not wantKind or wantKind == "spell" then
+      local sid = SpellIdFromFrame(btn)
+      if not sid then
+        local icon = btn.Button or btn.IconButton or btn.SpellButton or btn.iconButton
+        sid = SpellIdFromFrame(icon)
+      end
+      if not sid and btn.GetParent then
+        sid = SpellIdFromFrame(btn:GetParent())
+      end
+      if sid then
+        return "spell", sid
+      end
+    end
+    if not wantKind or wantKind == "toy" then
+      local tid = ToyIdFromFrame(btn)
+      if tid then
+        return "toy", tid
+      end
+    end
+    if not wantKind or wantKind == "item" then
+      local iid = ItemIdFromFrame(btn)
+      if iid then
+        return "item", iid
+      end
+    end
+    return nil, nil
+  end
+  local kind, id = liveIdentity()
+  if id and KindMatchesWant(kind, wantKind) then
+    stampPaint(kind, id)
+    return kind, id
   end
   local function readStamp(f)
     if not f then
@@ -1271,7 +1452,7 @@ function Mason:ResolveKbIdentity(btn, wantKind)
     end
     return nil, nil
   end
-  local kind, id = readStamp(btn)
+  kind, id = readStamp(btn)
   if not id then
     local p = btn.GetParent and btn:GetParent()
     local depth = 0
@@ -1282,13 +1463,7 @@ function Mason:ResolveKbIdentity(btn, wantKind)
     end
   end
   if id then
-    StampKbIdentity(btn, kind, id)
-    if kind == "spell" then
-      local paintCell = btn.Button or btn.IconButton or btn.SpellButton or btn.iconButton or btn
-      if paintCell ~= btn then
-        StampKbIdentity(paintCell, kind, id)
-      end
-    end
+    stampPaint(kind, id)
     return kind, id
   end
   local hit, owner = self:ResolveBindTargetFromFrame(btn)
@@ -1296,20 +1471,14 @@ function Mason:ResolveKbIdentity(btn, wantKind)
   if kind and id and KindMatchesWant(kind, wantKind) then
     local host = owner or btn
     StampKbIdentity(host, kind, id)
-    StampKbIdentity(btn, kind, id)
-    if kind == "spell" then
-      local paintCell = btn.Button or btn.IconButton or btn.SpellButton or btn.iconButton
-        or (host and (host.Button or host.IconButton or host.SpellButton or host.iconButton))
-        or btn
-      StampKbIdentity(paintCell, kind, id)
-    end
+    stampPaint(kind, id)
     return kind, id
   end
   local a = wantKind and KB_ADAPTERS[wantKind]
   if a and a.identity then
     id = a.identity(btn)
     if id then
-      StampKbIdentity(btn, wantKind, id)
+      stampPaint(wantKind, id)
       return wantKind, id
     end
   end
@@ -1327,15 +1496,47 @@ function Mason:PaintKbAdapter(kind)
   for i = 1, #buttons do
     local btn = buttons[i]
     local resolvedKind, id = self:ResolveKbIdentity(btn, a.name)
+    if not id and a.name == "macro" and btn.GetParent then
+      -- Icon host may lack element data; resolve from ScrollBox row parent.
+      resolvedKind, id = self:ResolveKbIdentity(btn:GetParent(), a.name)
+    end
+    local paintBtn = btn
+    if a.name == "macro" then
+      local host = MacroHotkeyHost(btn)
+      if not host and btn.GetParent then
+        host = MacroHotkeyHost(btn:GetParent())
+      end
+      if host then
+        paintBtn = host
+      end
+      if paintBtn ~= btn then
+        ClearMacroHotkeyVisual(btn)
+      end
+      -- Also clear sibling/row chrome if we collected the row.
+      if btn.Button and btn.Button ~= paintBtn then
+        ClearMacroHotkeyVisual(btn.Button)
+      end
+    end
     if id then
       StampKbIdentity(btn, resolvedKind or a.name, id)
+      StampKbIdentity(paintBtn, resolvedKind or a.name, id)
+    else
+      ClearKbIdentity(btn)
+      if paintBtn ~= btn then
+        ClearKbIdentity(paintBtn)
+      end
+      ClearMacroHotkeyVisual(paintBtn)
+      ClearMacroHotkeyVisual(btn)
     end
     if self.bindMode then
-      self:AttachKbHover(btn, a.name, id)
+      self:AttachKbHover(paintBtn, a.name, id)
+      if paintBtn ~= btn then
+        self:AttachKbHover(btn, a.name, id)
+      end
     end
     if id then
       painted = painted + 1
-      self:PaintKbOverlay(btn, a.name, id)
+      self:PaintKbOverlay(paintBtn, a.name, id)
     elseif not probeBtn then
       probeBtn = btn
     end
@@ -1808,15 +2009,20 @@ function Mason:PaintMacroHotkeys()
     local _, id = self:ResolveKbIdentity(btn, "macro")
     if not id then
       id = a.identity(btn)
-      if id then
-        StampKbIdentity(btn, "macro", id)
-      end
     end
+    local host = MacroHotkeyHost(btn) or btn
     if id then
-      self:PaintKbOverlay(btn, "macro", id)
+      StampKbIdentity(btn, "macro", id)
+      StampKbIdentity(host, "macro", id)
+      self:PaintKbOverlay(host, "macro", id)
+    else
+      ClearKbIdentity(btn)
+      ClearKbIdentity(host)
+      ClearMacroHotkeyVisual(btn)
+      ClearMacroHotkeyVisual(host)
     end
     if self.bindMode then
-      self:AttachKbHover(btn, "macro", id)
+      self:AttachKbHover(host, "macro", id)
     end
   end
 end
@@ -1831,6 +2037,17 @@ function Mason:HookMacroSelectorFillSignals()
     sel.masonFillSignals = true
     if sel.SetTab then
       hooksecurefunc(sel, "SetTab", function()
+        if sel.ScrollBox then
+          EachScrollBoxFrame(sel.ScrollBox, function(btn)
+            ClearKbIdentity(btn)
+            ClearMacroHotkeyVisual(btn)
+            local host = MacroHotkeyHost(btn)
+            if host then
+              ClearKbIdentity(host)
+              ClearMacroHotkeyVisual(host)
+            end
+          end)
+        end
         if Mason.RepaintSourceHotkeys then
           Mason:RepaintSourceHotkeys()
         else
@@ -1840,6 +2057,17 @@ function Mason:HookMacroSelectorFillSignals()
     end
     if sel.TabSystem and sel.TabSystem.SetTab then
       hooksecurefunc(sel.TabSystem, "SetTab", function()
+        if sel.ScrollBox then
+          EachScrollBoxFrame(sel.ScrollBox, function(btn)
+            ClearKbIdentity(btn)
+            ClearMacroHotkeyVisual(btn)
+            local host = MacroHotkeyHost(btn)
+            if host then
+              ClearKbIdentity(host)
+              ClearMacroHotkeyVisual(host)
+            end
+          end)
+        end
         if Mason.RepaintSourceHotkeys then
           Mason:RepaintSourceHotkeys()
         else
@@ -1850,21 +2078,51 @@ function Mason:HookMacroSelectorFillSignals()
   end
   if sel and sel.ScrollBox and not sel.ScrollBox.masonHotkeyRecycle then
     sel.ScrollBox.masonHotkeyRecycle = true
-    if sel.ScrollBox.RegisterCallback then
-      pcall(sel.ScrollBox.RegisterCallback, sel.ScrollBox, "OnAcquiredFrame", function(_, btn)
-        local _, id = Mason:ResolveKbIdentity(btn, "macro")
-        if not id then
-          id = MacroNameFromFrame(btn)
-          if id then
-            StampKbIdentity(btn, "macro", id)
-          end
+    local function clearMacroCellStamps(btn)
+      if not btn then
+        return
+      end
+      ClearKbIdentity(btn)
+      ClearMacroHotkeyVisual(btn)
+      local host = MacroHotkeyHost(btn)
+      if host and host ~= btn then
+        ClearKbIdentity(host)
+        ClearMacroHotkeyVisual(host)
+      end
+      if btn.Button and btn.Button ~= host then
+        ClearKbIdentity(btn.Button)
+        ClearMacroHotkeyVisual(btn.Button)
+      end
+    end
+    local function paintMacroCell(btn)
+      if not btn then
+        return
+      end
+      clearMacroCellStamps(btn)
+      local _, id = Mason:ResolveKbIdentity(btn, "macro")
+      if not id then
+        id = MacroNameFromFrame(btn)
+      end
+      if id then
+        StampKbIdentity(btn, "macro", id)
+      end
+      local host = MacroHotkeyHost(btn) or btn
+      if id then
+        StampKbIdentity(host, "macro", id)
+        if Mason.PaintKbOverlay then
+          Mason:PaintKbOverlay(host, "macro", id)
         end
-        if id and Mason.PaintKbOverlay then
-          Mason:PaintKbOverlay(btn, "macro", id)
-        end
-        if Mason.bindMode then
+      end
+      if Mason.bindMode then
+        Mason:AttachKbHover(host, "macro", id)
+        if host ~= btn then
           Mason:AttachKbHover(btn, "macro", id)
         end
+      end
+    end
+    if sel.ScrollBox.RegisterCallback then
+      pcall(sel.ScrollBox.RegisterCallback, sel.ScrollBox, "OnAcquiredFrame", function(_, btn)
+        paintMacroCell(btn)
       end)
       pcall(sel.ScrollBox.RegisterCallback, sel.ScrollBox, "OnScroll", function()
         if Mason.RepaintSourceHotkeys then
@@ -1872,6 +2130,22 @@ function Mason:HookMacroSelectorFillSignals()
         else
           Mason:PaintMacroHotkeys()
         end
+      end)
+    end
+    if sel.ScrollBox.Update and not sel.ScrollBox.masonMacroUpdatePaint then
+      sel.ScrollBox.masonMacroUpdatePaint = true
+      hooksecurefunc(sel.ScrollBox, "Update", function(box)
+        if Mason.masonMacroUpdateRepainting then
+          return
+        end
+        Mason.masonMacroUpdateRepainting = true
+        EachScrollBoxFrame(box or sel.ScrollBox, clearMacroCellStamps)
+        if Mason.RepaintSourceHotkeys then
+          Mason:RepaintSourceHotkeys()
+        else
+          Mason:PaintMacroHotkeys()
+        end
+        Mason.masonMacroUpdateRepainting = nil
       end)
     end
     if sel.ScrollBox.HookScript then
@@ -2911,7 +3185,7 @@ local function FindButtonIconTexture(btn)
   return nil
 end
 
-local function MacroHotkeyHost(btn)
+function MacroHotkeyHost(btn)
   -- Paint host = icon button (not the tall grid row/col container).
   if not CanUndimFrame(btn) then
     return nil
@@ -2945,6 +3219,14 @@ local function MacroHotkeyHost(btn)
             return c
           end
         end
+      end
+    end
+    -- Wide ScrollBox row: parent FontString to the icon texture's frame, never row chrome.
+    local iconTex = FindButtonIconTexture(btn)
+    if iconTex and iconTex.GetParent then
+      local p = iconTex:GetParent()
+      if p and CanUndimFrame(p) then
+        return p
       end
     end
     return nil
@@ -3150,6 +3432,15 @@ function Mason:EnsureBlizzardHotkeyFont(btn, identityKind)
   local cell = btn
   if isMacro then
     cell = MacroHotkeyHost(btn)
+    if not cell then
+      local iconTex = FindButtonIconTexture(btn) or FindIconRegion(btn)
+      if iconTex and iconTex.GetParent then
+        local p = iconTex:GetParent()
+        if p and CanUndimFrame(p) and not IsHotkeyHostWindow(p) then
+          cell = p
+        end
+      end
+    end
     if not cell then
       return nil
     end
@@ -3371,8 +3662,17 @@ function Mason:PaintBagHotkeys()
 end
 
 function Mason:PaintToyCellHotkey(btn)
-  local a = KB_ADAPTERS.toy
-  self:PaintKbOverlay(btn, "toy", a.identity(btn))
+  if not btn then
+    return
+  end
+  local _, id = self:ResolveKbIdentity(btn, "toy")
+  if not id then
+    id = ToyIdFromFrame(btn)
+  end
+  if id then
+    StampKbIdentity(btn, "toy", id)
+    self:PaintKbOverlay(btn, "toy", id)
+  end
 end
 
 function Mason:PaintToyHotkeys()
