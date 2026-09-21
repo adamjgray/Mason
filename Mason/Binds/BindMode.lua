@@ -939,17 +939,6 @@ local function CanUndimFrame(frame)
   return true
 end
 
-function Mason:RaiseBindUndimFrame(frame)
-  -- 09ab: zero Blizzard SetFrameStrata/Raise for undim. Mason-owned frames
-  -- use their own prepare paths (catcher/panel/glow).
-  return
-end
-
-function Mason:RaiseBindUndimTree(frame, depth)
-  -- 09aa: never tree-walk BindMode via GetChildren.
-  return
-end
-
 local function EachScrollBoxFrame(box, fn)
   if not box then
     return
@@ -1100,11 +1089,6 @@ function Mason:PaintKbOverlay(button, identityKind, identity)
   else
     fs:SetText("")
   end
-end
-
-function Mason:RaiseBindKbFrame(frame)
-  -- 09ab: never Raise Blizzard kb chrome.
-  return
 end
 
 local function IsShownCell(btn)
@@ -1630,22 +1614,6 @@ function Mason:AttachKbHover(button, kind, id)
   end)
 end
 
-function Mason:CountBagItemButtons(frame)
-  local n = 0
-  EachBagItemButton(frame, function(btn)
-    if CanUndimFrame(btn) then
-      n = n + 1
-    end
-  end)
-  return n
-end
-
-function Mason:RaiseBindItemButtons(frame)
-  -- 09aa: never raise or walk item buttons from raise paths.
-  -- Paint/attach runs deferred via PassBagsRaiseAndPaint / AttachKbBagHover.
-  return
-end
-
 function Mason:HookBagSearchBox(frame)
   if not frame then
     return
@@ -1715,28 +1683,6 @@ function Mason:RaiseBindBagFrames()
   end
 end
 
-function Mason:KbWantsRaise()
-  return not not (self.bindMode or self.kbWantsRaise)
-end
-
-function Mason:ReassertBindCatcher()
-  if not self.bindMode then
-    return
-  end
-  local catcher = self:EnsureBindCatcher()
-  if catcher then
-    catcher:EnableMouse(false)
-    catcher:SetFrameStrata(PANEL_STRATA)
-    catcher:SetFrameLevel(CATCHER_LEVEL)
-    catcher:Show()
-    catcher:EnableKeyboard(true)
-    if catcher.SetPropagateKeyboardInput then
-      catcher:SetPropagateKeyboardInput(true)
-    end
-  end
-  -- 09aa: never ShowBindVeil here (AttachKbBagHover → Reassert → veil → raise loop).
-end
-
 function Mason:GetSpellBookRoot()
   if self.masonSpellBookFrame then
     return self.masonSpellBookFrame
@@ -1771,22 +1717,6 @@ function Mason:RememberSpellBookFrame(frame)
       self.masonSpellBookFrame = frame
     end
   end
-end
-
-function Mason:PaintScrollBoxHotkeys(frame, depth)
-  return
-end
-
-function Mason:CountAllBagButtons()
-  local n = self:CountBagItemButtons(_G.ContainerFrameCombinedBags)
-  if n > 0 then
-    return n
-  end
-  local max = NUM_CONTAINER_FRAMES or 13
-  for i = 1, max do
-    n = n + self:CountBagItemButtons(_G["ContainerFrame" .. i])
-  end
-  return n
 end
 
 function Mason:HookBagItemParents(frame)
@@ -1832,13 +1762,6 @@ function Mason:HookBagItemParents(frame)
         end
       end)
     end
-  end
-end
-
-function Mason:ScheduleBagFillWatch()
-  -- 09ab: no multi-delay bag fill pulse. One After(0) probe via ScheduleBagFollowup.
-  if self.ScheduleBagFollowup then
-    self:ScheduleBagFollowup()
   end
 end
 
@@ -2036,36 +1959,6 @@ function Mason:CountMacroButtons()
     end
   end
   return n
-end
-
-function Mason:RefreshMacroSelector()
-  local mf = _G.MacroFrame
-  if not mf then
-    return
-  end
-  if type(_G.MacroFrame_Update) == "function" then
-    pcall(_G.MacroFrame_Update)
-  elseif mf.Update then
-    pcall(mf.Update, mf)
-  end
-  local sel = mf.MacroSelector
-  if not sel then
-    return
-  end
-  if sel.Update then
-    pcall(sel.Update, sel)
-  end
-  if sel.RefreshScrollBox then
-    pcall(sel.RefreshScrollBox, sel)
-  end
-  if sel.ScrollBox then
-    if sel.ScrollBox.Rebuild then
-      pcall(sel.ScrollBox.Rebuild, sel.ScrollBox)
-    end
-    if sel.ScrollBox.Update then
-      pcall(sel.ScrollBox.Update, sel.ScrollBox)
-    end
-  end
 end
 
 function Mason:PassMacroRaiseAndPaint()
@@ -2271,11 +2164,6 @@ function Mason:HookMacroSelectorFillSignals()
   end
 end
 
-function Mason:SoftFillMacroSelector()
-  -- 09ab diagnosis: SoftFill Update is not MacroUI init — deleted as theater.
-  return
-end
-
 function Mason:ScheduleMacroFollowup()
   -- Paint only when MacroUI is loaded and selector already has cells.
   -- Cold first Show: HookMacroSelectorFillSignals OnAcquiredFrame/SetTab paints when data arrives.
@@ -2303,11 +2191,6 @@ function Mason:ScheduleMacroFollowup()
   else
     run()
   end
-end
-
-function Mason:RaiseBindSpellBook()
-  -- 09ab: never Raise spellbook chrome; paint/hover via RepaintSourceHotkeys + mixins.
-  return
 end
 
 function Mason:OnMacroOpened()
@@ -2550,57 +2433,6 @@ function Mason:InstallBindBagHooks()
   self:HookLateFrameOnShow(_G.SpellBookFrame, "spell")
 end
 
-function Mason:RaiseBindMacroFrames()
-  -- 09ab: never Raise MacroFrame/Selector/ScrollBox (raise blanks the grid).
-  local mf = _G.MacroFrame
-  if not mf then
-    return
-  end
-  self:HookMacroKbShow(mf)
-  local sel = mf.MacroSelector
-  if sel then
-    self:HookMacroKbShow(sel)
-    if sel.ScrollBox then
-      self:HookMacroKbShow(sel.ScrollBox)
-    end
-  end
-end
-
-function Mason:HookMacroKbShow(frame)
-  if not CanUndimFrame(frame) or frame.masonKbShowAlways then
-    return
-  end
-  frame.masonKbShowAlways = true
-  if frame.HookScript then
-    frame:HookScript("OnShow", function()
-      Mason:OnMacroOpened()
-    end)
-  end
-end
-
-function Mason:RaiseBindToyFrames()
-  -- 09ab: paint/attach only — never Raise toy chrome.
-  if self.InstallSourceHoverMixins then
-    pcall(self.InstallSourceHoverMixins, self)
-  end
-  if self.RepaintSourceHotkeys then
-    self:RepaintSourceHotkeys()
-    return
-  end
-  local a = KB_ADAPTERS.toy
-  local buttons = a.buttons()
-  for i = 1, #buttons do
-    local btn = buttons[i]
-    local id = a.identity(btn)
-    if self.bindMode then
-      self:AttachKbHover(btn, "toy", id)
-    end
-    if id then
-      self:PaintKbOverlay(btn, "toy", id)
-    end
-  end
-end
-
 function Mason:HookToyKbShow(frame)
   if not frame or frame.masonKbToyShowAlways then
     return
@@ -2623,73 +2455,6 @@ function Mason:HookToyKbShow(frame)
       end
     end)
   end
-end
-
-function Mason:RefreshMacroSelectorIfEmpty()
-  local mf = _G.MacroFrame
-  if not mf or not mf.IsShown or not mf:IsShown() then
-    return
-  end
-  local function hasButtons()
-    local maxMacro = (MAX_ACCOUNT_MACROS or 120) + (MAX_CHARACTER_MACROS or 18)
-    for i = 1, maxMacro do
-      local b = _G["MacroButton" .. i]
-      if b and b.IsShown and b:IsShown() then
-        return true
-      end
-    end
-    local sel = mf.MacroSelector
-    if sel and sel.ScrollBox and sel.ScrollBox.GetFrames then
-      local frames = sel.ScrollBox:GetFrames()
-      if type(frames) == "table" then
-        for i = 1, #frames do
-          if frames[i] and frames[i].IsShown and frames[i]:IsShown() then
-            return true
-          end
-        end
-      end
-    end
-    return false
-  end
-  if hasButtons() then
-    return
-  end
-  if type(_G.MacroFrame_Update) == "function" then
-    pcall(_G.MacroFrame_Update)
-  elseif mf.Update then
-    pcall(mf.Update, mf)
-  else
-    local sel = mf.MacroSelector
-    if sel then
-      if sel.Update then
-        pcall(sel.Update, sel)
-      end
-      if sel.RefreshScrollBox then
-        pcall(sel.RefreshScrollBox, sel)
-      end
-      if sel.ScrollBox and sel.ScrollBox.Rebuild then
-        pcall(sel.ScrollBox.Rebuild, sel.ScrollBox)
-      end
-    end
-  end
-end
-
-function Mason:HookBindUndimShow(frame)
-  -- 09aa: never raise from bag/frame Show (breaks Show→raise reentry).
-  return
-end
-
-function Mason:RaiseBindUndimmedFrames()
-  -- 09ab: never undim via Blizzard SetFrameStrata/Raise. Mason panel/catcher
-  -- prepare paths own their strata; veil is dim-only at LOW.
-  if self.InstallBindBagHooks then
-    self:InstallBindBagHooks()
-  end
-end
-
-function Mason:RestoreBindUndimmedFrames()
-  -- 09ab: no Blizzard strata restore (undim raise path deleted).
-  self.bindUndimRestore = nil
 end
 
 function Mason:ShowBindVeil()
@@ -2719,7 +2484,6 @@ function Mason:HideBindVeil()
     self.bindVeil:EnableMouse(false)
     self.bindVeil:Hide()
   end
-  self:RestoreBindUndimmedFrames()
 end
 
 function Mason:EnsureBindCatcher()
@@ -2847,11 +2611,6 @@ function Mason:OnBindCatcherKey(catcher, key)
   self:ApplyHoverBind(target, chord)
 end
 
-function Mason:WatchLazyBindFrames()
-  -- 09ab: deleted — no OnUpdate pulse that re-raises/re-paints Blizzard chrome.
-  return
-end
-
 function Mason:SetBindMode(on)
   on = not not on
   if on and InCombatLockdown() then
@@ -2862,7 +2621,6 @@ function Mason:SetBindMode(on)
     return true
   end
   self.bindMode = on
-  self.kbWantsRaise = on
   if on then
     self.masonKbProbe = {}
     local catcher = self:EnsureBindCatcher()
@@ -2948,7 +2706,6 @@ end
 function Mason:ExitBindMode()
   if self.bindMode then
     self.bindMode = false
-    self.kbWantsRaise = false
     self.bindHoverEnterFrame = nil
     self.masonBagNeedButtons = nil
     self.masonBagFillWatch = nil
@@ -3680,22 +3437,6 @@ local function SetBlizzardHotkeyHidden(btn, hidden)
       hk:Show()
     end
   end
-end
-
-function Mason:PaintBlizzardHotkey(btn)
-  if not btn then
-    return
-  end
-  local kind, id = self:ResolveKbIdentity(btn, nil)
-  if not kind or not id then
-    return
-  end
-  StampKbIdentity(btn, kind, id)
-  self:PaintKbOverlay(btn, kind, id)
-end
-
-function Mason:WalkBlizzardHotkeys(frame, depth)
-  return
 end
 
 function Mason:ScheduleSpellbookHotkeys()
