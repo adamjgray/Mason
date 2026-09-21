@@ -2,6 +2,8 @@
 
 Do not change scale host, flyout populate, or dock candidate rules.
 
+> **Supersession (source panels):** §2 “Raise those frames above the veil” / Acceptance #2 “stay undimmed” are **superseded by [`09ab`](09ab-source-panels-no-raise.md) + [`09aa`](09aa-crash-guards.md)**. Do **not** Raise Blizzard chrome to undim. Veil is dim-only; product accepts current dim. Keep `/mason edit`, ghosts, and config chrome Acceptance.
+
 ## 1. `/mason edit`
 
 - `/mason edit` toggles edit mode (what `/mason lock` does now).
@@ -11,20 +13,16 @@ Do not change scale host, flyout populate, or dock candidate rules.
 
 ## 2. Bind-mode dim
 
-While `/mason kb` is on:
+~~While `/mason kb` is on: Raise spellbook/bags/macros above the veil.~~ **Superseded by 09ab** — veil dim-only; zero Blizzard strata mutation; hotkeys always-on from store.
 
-- Show a dim veil (same family as edit veil, alpha ~0.45) **under** bindable UI.
+Historical intent (kept for context only):
+
+- Show a dim veil (same family as edit veil) **under** bindable UI.
 - Veil `EnableMouse(false)` always.
-- Do **not** dim:
-  - placed Mason executors + edit handles if edit is also on
-  - Spellbook frames
-  - Macro UI
-  - Bag/container item buttons
-- Raise those frames / MasonBindPanel above the veil (DIALOG, level > veil).
 - Gold hover outline on the current bind target stays.
 - Exit kb: hide veil.
 
-If a bag addon parents items oddly, still try default bags first.
+Do **not** implement the struck “raise Blizzard frames above veil” / “stay undimmed” clauses.
 
 ## 3. Ghosts in AceConfig
 
@@ -53,6 +51,6 @@ If AceConfigDialog cannot be skinned cleanly, host the AceGUI tree inside a Maso
 ## Acceptance
 
 1. `/mason edit` toggles the grid; `/mason lock` still works.
-2. `/mason kb` dims the world; spellbook, bags, macros, and Mason pieces stay undimmed and clickable/hover-bindable.
+2. `/mason kb` shows a dim veil (`EnableMouse(false)`). Blizzard panels are **not** Raise-undimmed (09ab). Store hotkeys + hover-bind still work; gray-under-dim is accepted.
 3. Ghosts tab shows leftover views with icon + id + name; Clear view removes one.
 4. Config window matches edit/bind panels.

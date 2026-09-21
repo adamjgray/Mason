@@ -2,6 +2,8 @@
 
 Do not change scale host or flyout populate.
 
+> **Supersession (source panels):** §7 Raise-above-veil / Acceptance #6 “sit above the dim” are **superseded by [`09ab`](09ab-source-panels-no-raise.md)**. Hover-bind targets (spellbook, bags, toys, macros) remain valid; undim-via-Raise does not.
+
 ## 1. Debug gate
 
 `db.char.debug` default false.
@@ -63,19 +65,13 @@ Hover-bind must resolve:
 - **Default bags** and the open bag frame’s item buttons
 - **Macro UI** macro buttons
 
-On entering kb mode **and** whenever those frames show (`BAG_UPDATE`, toy box/macro OnShow):
+~~On entering kb / frame Show: Raise spellbook, bags, toy box, macro frame above the dim veil.~~ **Superseded by 09ab** — no Blizzard Raise/strata undim. Schedule store paint / mixin attach only (09aa: never raise from bag Show).
 
-- Raise spellbook, bags, toy box, macro frame, Mason pieces, MasonBindPanel **above** the dim veil
-- Veil stays `EnableMouse(false)`
-- Re-apply raise if the player opens bags/macros/toys **after** kb is already on
+Veil stays `EnableMouse(false)`. Highlight on hover is not enough: `OnKeyDown` must use the **same** hover target as the gold outline.
 
-Highlight on hover is not enough: `OnKeyDown` must use the **same** hover target as the gold outline.
+If `GetMouseFoci` returns the highlight overlay instead of the toy/item button, walk `GetParent()` until a button with item/toy/macro/spell id is found (parent walk from focus — not a window tree-walk).
 
-If `GetMouseFoci` returns the highlight overlay instead of the toy/item button, walk `GetParent()` until a button with item/toy/macro/spell id is found.
-
-Bag items appearing **under** the veil = veil frame level too high or bags not raised. Fix raise, do not EnableMouse on the veil.
-
-Macros missing inside the window = macro buttons parented under a dimmed child or clipped; raise `MacroFrame` (or 12.x name) and its scroll children.
+Do **not** “fix” gray bags by raising containers. Product accepts veil dim.
 
 ## Acceptance
 
@@ -84,4 +80,4 @@ Macros missing inside the window = macro buttons parented under a dimmed child o
 3. Check combat + target on one piece; both stick; dropdown to another piece shows that piece’s checks.
 4. Open flyout children do not appear on Ghosts. An unbound leftover view does.
 5. Left rail has no bind how-to paragraph.
-6. Kb on, then open bags / macros / toy box — they sit above the dim. Hover toy + key binds that toy. Hover bag item + key binds that item. Hover macro + key binds that macro.
+6. Kb on, then open bags / macros / toy box — hover + key binds that identity; store hotkeys paint. Panels are **not** required to Raise above the veil (09ab; accept dim).

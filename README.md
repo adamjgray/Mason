@@ -11,7 +11,7 @@ Requires a Midnight client (`Interface` 120100). Classic and older Retail are no
 Default (and most bar addons) start with *N* grids and ask you to hide empty slots. Mason starts empty. If you want a button, you drag a spell, item, macro, toy, or flyout onto the UI. That drop creates a **piece**: one secure executor, an optional on-screen face, an optional key, and layout data.
 
 - **Binds follow specialization.**
-- **Layout follows character.**
+- **Layout follows the AceDB profile** (`db.profile.views` — 09i). Switching profiles loads binds and layout together.
 - Default bars stay visible in v1. Mason coexists; it does not hide Blizzard bars.
 
 ## What a piece is
@@ -20,7 +20,7 @@ Default (and most bar addons) start with *N* grids and ask you to hide empty slo
 |---|---|
 | Executor `MasonExec_<id>` | `SecureActionButton` / LibActionButton face. Click and key both cast. |
 | Key | `SetOverrideBindingClick` on `MasonBindOwner`. Stealing a key toasts what was unbound. |
-| View | Position, size in pixels, dock, visibility rule. Saved per character. |
+| View | Position, size in pixels, dock, visibility rule. Saved on the AceDB **profile** (`db.profile.views`). |
 | Face | Cooldown swipe/numbers, charges or item stacks, OOR/OOM, hotkey text, tooltips, optional Masque group `Mason`. |
 
 Pieces are created from the cursor (`GetCursorInfo`: spell, item, macro, flyout). Combat-sensitive work is queued (`QueueIfCombat`) and applied on regen.
@@ -97,9 +97,9 @@ Notifications use `Mason:Notify` (chat plus `UIErrorsFrame` when present).
 
 ## Saved data
 
-AceDB. Kits (piece type, spell/item/macro/flyout id, key) are **per spec**. Views (x, y, size, dock, rule, visible) are **per character**.
+AceDB. Kits (piece type, spell/item/macro/flyout id, key) are **per spec** inside the profile. Views (x, y, size, dock, rule, visible) and UI settings (`defaultSize`, `snap`, `gridSize`, `debug`) are **profile-owned** (`db.profile.views`, …). A one-time migration copies legacy `db.char.views` into the current profile when profile views are empty.
 
-Import/export (schema version on the blob; refuse a newer major, migrate an older one) is designed, not the day-to-day workflow yet.
+Import/export (schema version on the blob; refuse a newer major, migrate an older one) is available via `/mason export` / `/mason import`.
 
 ## Development
 
@@ -107,14 +107,15 @@ Retail only. Secure attributes and override binds must stay on the combat-safe p
 
 Layout math is in `UIParent` space. Piece size is stored in **pixels** (`views[id].size`, default `db.char.defaultSize`). `/mason grid` must not change piece size.
 
-**Bind mode (`Mason/Binds/BindMode.lua`)** is the active construction site:
+**Bind mode / source panels** — SoT is `SPEC/09ab-source-panels-no-raise.md` + `SPEC/09aa-crash-guards.md`:
 
-- Do not recurse `GetChildren` on bags, PlayerSpellsFrame, MacroFrame, or CollectionsJournal.
-- Do not raise item buttons; do not raise from bag `Show` (C stack overflow via `RaiseBindBagFrames`).
-- Overlay + hover-bind go through `PaintKbOverlay` / `AttachKbHover` / `KeyForIdentity` only.
-- No `print` from Blizzard `Show` handlers.
+- Hotkey **display** is always-on from binding store data (not gated on `/mason kb`).
+- Veil is dim-only; **do not** undim Blizzard panels via Raise/strata (product: accept current dim).
+- No window `GetChildren` walks; no raise from bag `Show`; no item-button raise; no `print` from Blizzard `Show`.
+- One store painter: `RepaintSourceHotkeys`. Legacy `Raise*` symbol names are historical (paint/hooks only).
+- Review/QA: `SPEC/review-gates-kb.md`, `SPEC/qa-kb-source-panels.md`. Index: `SPEC/README.md`.
 
-Architecture notes and phase specs live in `SPEC/` when present. `SPEC/MASON-ARCHITECT-HANDOFF.md` is the brief for a manager agent.
+Architecture notes and phase specs live in `SPEC/`. `SPEC/MASON-ARCHITECT-HANDOFF.md` is the brief for a manager agent.
 
 ### Suggested agent split
 
