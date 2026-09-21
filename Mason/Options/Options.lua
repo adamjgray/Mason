@@ -742,7 +742,6 @@ function Mason:EnsureOptionsFrame()
   panel:SetFrameLevel(220)
   panel:EnableMouse(true)
   panel:SetMovable(true)
-  panel:EnableKeyboard(true)
   panel:Hide()
   SkinPanel(panel)
   panel:SetScript("OnMouseDown", function(self)
@@ -751,20 +750,8 @@ function Mason:EnsureOptionsFrame()
   panel:SetScript("OnMouseUp", function(self)
     self:StopMovingOrSizing()
   end)
-  panel:SetScript("OnKeyDown", function(self, key)
-    if key == "ESCAPE" then
-      -- SetPropagateKeyboardInput is protected; skip under lockdown.
-      -- Hide remains safe in combat for this insecure options frame.
-      if not InCombatLockdown() and self.SetPropagateKeyboardInput then
-        self:SetPropagateKeyboardInput(false)
-      end
-      self:Hide()
-      return
-    end
-    if not InCombatLockdown() and self.SetPropagateKeyboardInput then
-      self:SetPropagateKeyboardInput(true)
-    end
-  end)
+  -- No EnableKeyboard / OnKeyDown. Product: Options is hidden in combat (see
+  -- HideOptionsForCombat); ESC while shown uses UISpecialFrames below.
   panel:SetScript("OnShow", function(self)
     self:SetFrameStrata("FULLSCREEN_DIALOG")
     self:Raise()
@@ -895,8 +882,26 @@ function Mason:EnsureOptionsFrame()
   return panel
 end
 
+function Mason:HideOptionsForCombat()
+  local panel = self.optionsPanel
+  if panel and panel.IsShown and panel:IsShown() then
+    self.optionsRestoreAfterCombat = true
+    panel:Hide()
+  end
+end
+
+function Mason:RestoreOptionsAfterCombat()
+  if not self.optionsRestoreAfterCombat then
+    return
+  end
+  self.optionsRestoreAfterCombat = false
+  self:OpenOptions()
+end
+
 function Mason:OpenOptions()
-  if InCombatLockdown() and not self.optionsPanel then
+  -- Product: Options stays closed during combat; reopen via RestoreUiAfterCombat
+  -- if we hid it, or via QueueIfCombat if the user asked to open while locked down.
+  if InCombatLockdown() then
     self:QueueIfCombat(function()
       Mason:OpenOptions()
     end)
