@@ -131,12 +131,14 @@ Slash: `/mason kb`.
 
 ### BindMode — internal / historical names
 
-Treat as **internal** (may be renamed or deleted in Track B). Bodies must not Blizzard-Raise for undim (09ab):
+Treat as **internal** (may be renamed in Track B-04). Bodies must not Blizzard-Raise for undim (09ab):
 
 - `RaiseBind*` / `Pass*RaiseAndPaint` / `KbWantsRaise` — paint/hook/schedule or no-op only
-- `PaintBagHotkeys` / `PaintMacroHotkeys` / `PaintSpellbookHotkeys` / `PaintToyHotkeys` / `RefreshBlizzardHotkeys` — prefer callers go through `RepaintSourceHotkeys`
-- `SoftFillMacroSelector` / `WatchLazyBindFrames` / `WalkBlizzardHotkeys` / `HookBindUndimShow` / `RaiseBindItemButtons` — permanent no-ops or delete candidates
+- `RequestBlizzardHotkeys` / `ScheduleSpellbookHotkeys` / `ScheduleBagFollowup` — deferred coalesce into `RepaintSourceHotkeys`
+- `PaintKbAdapter` / `PaintToyCellHotkey` — private adapters / cell stamp helpers (not a second public painter)
 - EnsureBindVeil / Catcher / Panel / EditBar / overwrite dialog — UI internals
+
+**Deleted (B-02 single painter):** `PaintBagHotkeys` / `PaintMacroHotkeys` / `PaintSpellbookHotkeys` / `PaintToyHotkeys` / `RefreshBlizzardHotkeys` dual-stack aliases.
 
 ---
 
