@@ -30,7 +30,7 @@ Principle: Additive interaction layer. No bars to subtract from.
 |---|---|
 | Kit | Spec-scoped parts list (binds) |
 | Piece | One bind + optional HUD view |
-| Layout | Character-scoped positions / docks of visible pieces |
+| Layout | Profile-scoped positions / docks of visible pieces (`db.profile.views`) |
 | Course | A docked row of pieces (language only; not a Phase 1 object) |
 | Executor | Named secure button that actually receives the click/key |
 | View | Optional visible widget for a piece |
@@ -41,7 +41,7 @@ Principle: Additive interaction layer. No bars to subtract from.
 1. Retail Midnight (12.x) only.
 2. Named secure executor + `SetOverrideBindingClick`.
 3. Steal the key and toast what was unbound.
-4. Binds (kit) per specialization; layout per character.
+4. Binds (kit) per specialization; **layout per AceDB profile** (`db.profile.views` — 09i). Older “layout per character” wording is superseded.
 5. Libs when needed: Ace3, AceDB, AceConfig, LibDeflate, vendored LibActionButton, optional Masque. Phase 1 may use AceAddon + AceDB only.
 6. Canvas-first + one config window (not Phase 1).
 7. Coexist with Blizzard default bars. Do not hide them.
@@ -55,7 +55,7 @@ Principle: Additive interaction layer. No bars to subtract from.
 
 ## Non-goals (all phases unless a later spec explicitly lifts one)
 
-- No Blizzard action-slot writes (`PickupAction` / `PlaceAction` / `C_ActionBar.PutActionInSlot` to build the kit).
+- No Blizzard action-slot writes (`PickupAction` / `PlaceAction` / `C_ActionBar.PutActionInSlot`) **to build the kit**. Reading slots / crate-on-pickup-to-default-bar per `03c` is allowed.
 - No Cooldown Manager integration.
 - No Edit Mode registration.
 - No hiding default action bars in v1.

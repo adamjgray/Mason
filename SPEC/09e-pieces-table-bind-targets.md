@@ -2,6 +2,8 @@
 
 Do not change scale host.
 
+> **Supersession (source panels):** “Raise that frame … above the veil” on kb enter/OnShow is **superseded by [`09ab`](09ab-source-panels-no-raise.md)**. Hover-bind target list remains; undim-via-Raise does not.
+
 ## 1. Flyout close is silent
 
 Closing a flyout crates children with **no** `Notify` and **no** `print`, even if debug is on (debug may print one line total: `flyout closed <parentId>`).
@@ -34,10 +36,7 @@ Must work at the same time for:
 - macro UI
 - toy box (keep working)
 
-On kb enter **and** OnShow of SpellBookFrame / bag frames / MacroFrame / ToyBox:
-
-- Raise that frame and its item/spell/macro buttons above the veil
-- Do not lower spellbook when raising bags
+On kb enter **and** OnShow of SpellBookFrame / bag frames / MacroFrame / ToyBox: schedule store paint / mixin attach only. ~~Raise that frame and its buttons above the veil.~~ **Superseded by 09ab.**
 
 Hover resolve: walk `GetMouseFoci()` parents until one of:
 

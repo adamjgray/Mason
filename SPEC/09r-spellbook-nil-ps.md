@@ -1,24 +1,11 @@
-# Mason 9r — PaintSpellbookHotkeys nil `ps`
+# 09r — archived
 
-One-line crash on `/reload`. Do not change bag/toy/macro paint, scale host, flyouts, or profiles.
+**Superseded.** This kb-chase / raise-undim SPEC is no longer SoT.
 
-## End goal
+- Canonical source panels: [`09ab-source-panels-no-raise.md`](09ab-source-panels-no-raise.md)
+- Crash guards: [`09aa-crash-guards.md`](09aa-crash-guards.md)
+- Index: [`README.md`](README.md)
 
-`/reload` has no `PaintSpellbookHotkeys` error. Book paint still runs when the book exists.
+Historical text: [`archive/kb-chase/09r-spellbook-nil-ps.md`](archive/kb-chase/09r-spellbook-nil-ps.md)
 
-## Fix
-
-`BindMode.lua:2970` indexes `ps` while it is nil (PLAYER_LOGIN / addon Enable, book not loaded).
-
-At the top of `PaintSpellbookHotkeys` (and `ScheduleSpellbookHotkeys` if it assumes the same):
-
-```
-local ps = PlayerSpellsFrame or self.masonSpellBookFrame or _G.SpellBookFrame
-if not ps then return end
-```
-
-pcall the rest. Do not create frames. Do not skip later OnShow paint.
-
-## Done when
-
-`/reload` — 0× that error. Opening the book still paints as in 9q.
+Do **not** implement raise/undim Acceptance from this file. Track B may delete leftover code that only existed to satisfy it.

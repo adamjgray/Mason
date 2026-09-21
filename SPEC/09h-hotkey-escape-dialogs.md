@@ -2,6 +2,8 @@
 
 Do not change scale host, bag enable logic that is now working, or overwrite *behavior* (only strata).
 
+> **Supersession (source panels):** Raise MacroFrame/ToyBox above veil (§5–6) and “kb raise” coupling are **superseded by [`09ab`](09ab-source-panels-no-raise.md) + [`09aa`](09aa-crash-guards.md)**. Uniform TOP-RIGHT hotkey look, Escape-in-edit, and Mason overwrite dialog strata on **Mason-owned** frames remain valid. Always-on store paint is frozen (do not re-gate on kb).
+
 ## 1. One hotkey look everywhere
 
 Same placement as a **placed Mason piece**: **TOP-RIGHT of the icon**.
@@ -23,7 +25,7 @@ Spellbook must show the chord **without** entering kb mode. Update on:
 - SpellBookFrame OnShow
 - PLAYER_LOGIN / spellbook tab change
 
-If it only appears after `/mason kb`, the painter is tied to bind-mode raise. Split **paint hotkeys** from **kb raise**.
+If it only appears after `/mason kb`, the painter is wrongly gated — use store-driven `RepaintSourceHotkeys` (09ab). ~~Split paint from kb raise~~ — raise-for-undim is forbidden.
 
 ## 2. Escape in edit mode
 
@@ -51,24 +53,19 @@ Only move the Mason chord to **TOP-RIGHT** of the item icon. Count stays BOTTOMR
 
 ## 5. Macros opened after kb
 
-If MacroFrame is created/shown **after** kb is on, the grid is empty.
+If MacroFrame is created/shown **after** kb is on, ensure hooks install and store paint runs (09ab deferred Show paint).
 
-Hook MacroFrame OnShow (and 12.x `MacroFrame.MacroSelector` OnShow) **every time**, not only if it existed at kb enter.
+~~OnShow: raise above veil, force stock grid via raise timing.~~ **Superseded by 09ab** — never raise MacroFrame/Selector for undim (blanks grid). No SoftFill/Rebuild theater.
 
-On that Show: raise above veil, do not Hide children, then call the stock update (`MacroFrame_Update` / selector refresh).
+Hotkey: parent to the **macro icon**, TOP-RIGHT. Not the selector cell chrome.
 
-If Mason options is open, still raise MacroFrame above the veil (options can stay; macros must paint).
+## 6. Toy box
 
-## 6. Toy box regression
+Hover-bind + hotkey paint on toys via adapters / mixins + `RepaintSourceHotkeys`.
 
-Restore hover-bind + hotkey paint on toys.
+~~On kb enter / ToyBox OnShow: raise ToyBox above the veil.~~ **Superseded by 09ab**.
 
-On kb enter and ToyBox OnShow:
-
-- raise ToyBox / CollectionsJournal toy pane above the veil
-- do not Disable toy buttons
-- hover walk must find the toy button id again (parent walk)
-- paint TOP-RIGHT hotkey even when kb is off
+Do not Disable toy buttons. Paint TOP-RIGHT hotkey even when kb is off (always-on).
 
 Debug (only if debug on) on key: `Mason: kb hover toy <id>` so a miss is obvious.
 

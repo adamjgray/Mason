@@ -2,6 +2,9 @@
 
 Do not change scale host or flyout populate.
 
+> **Product (frozen):** profile-owned layouts stay (`db.profile.views`).  
+> **Supersession (source panels):** §6–7 CombinedBags/MacroFrame **raise** clauses are **superseded by [`09ab`](09ab-source-panels-no-raise.md) + [`09aa`](09aa-crash-guards.md)**. Profile migration, Escape order, spellbook icon hotkey placement, and Mason-owned dialog strata remain.
+
 ## 1. Spellbook hotkey + hover
 
 - Paint the chord on the **spell icon texture/button**, TOP-RIGHT of that icon, not the row container.
@@ -44,26 +47,21 @@ Description on Profiles pane: switching Existing Profiles loads binds **and** la
 
 ## 4–5. Dialog strata + overwrite clicks
 
-MasonBindPanel, Mason edit panel, overwrite dialog, options frame:
+**Mason-owned** frames only (MasonBindPanel, edit panel, overwrite dialog, options):
 
 - `FULLSCREEN_DIALOG` or `TOOLTIP`
-- `Raise()` on Show
-- Overwrite: buttons **above** the backdrop (`SetFrameLevel` backdrop 1, text 2, buttons 10+). EnableMouse on buttons only. Backdrop must not cover the hit rects (the screenshot problem is the gold panel eating clicks).
+- `Raise()` on Show (Mason frames — not Blizzard source chrome)
+- Overwrite: buttons **above** the backdrop (`SetFrameLevel` backdrop 1, text 2, buttons 10+). EnableMouse on buttons only. Backdrop must not cover the hit rects.
 
 ## 6. Bags either order
 
-Kb then bags, or bags then kb: Combined Bags stay raised, hover-bind works, no Disable.
-
-Hook OnShow **and** a short OnUpdate/0s timer the first time Combined Bags exists after kb start (lazy frame).
+Kb then bags, or bags then kb: hover-bind works, no Disable. ~~Combined Bags stay raised.~~ **Superseded by 09ab** — no Blizzard Raise undim; schedule paint/attach only (09aa: never raise from bag Show).
 
 ## 7. Macro grid + hotkey
 
-If kb is on before `/macro`:
+If kb is on before `/macro`: hooks + store paint on Show (09ab). ~~OnShow: raise MacroFrame + selector / force populate via raise timing.~~ **Superseded by 09ab** — never raise MacroFrame/Selector for undim.
 
-- OnShow: raise MacroFrame + selector, never Hide selector children
-- Force the stock grid populate after Show (the 12.x selector often builds once on first open; kb raise was running before that)
-
-Hotkey: parent to the **macro icon**, TOP-RIGHT of that icon. Not the selector cell/container (that is why `9` floats above the button).
+Hotkey: parent to the **macro icon**, TOP-RIGHT of that icon. Not the selector cell/container.
 
 ## Acceptance
 
