@@ -34,10 +34,20 @@ function Mason:CreatePiece(fields)
   kit.pieces[id] = piece
   if fields.key then
     self:SetPieceKey(id, fields.key)
+    -- C-06: SetPieceKey is bind-only; membership still needs layout.
+    self:QueueIfCombat(function()
+      if Mason.ApplyLayout then
+        Mason:ApplyLayout()
+      end
+    end)
   else
+    -- C-06: new kit member → EnsureExecutor + rebind + layout.
     self:QueueIfCombat(function()
       self:EnsureExecutor(piece)
       self:ApplyOverrides()
+      if self.ApplyLayout then
+        self:ApplyLayout()
+      end
     end)
   end
   return piece
@@ -124,9 +134,13 @@ function Mason:DeletePiece(id)
   if views then
     views[id] = nil
   end
+  -- C-06: kit membership changed → rebind then full layout (not bind-only).
   local deferred = self:QueueIfCombat(function()
     self:ParkExecutor(id)
     self:ApplyOverrides()
+    if self.ApplyLayout then
+      self:ApplyLayout()
+    end
   end)
   -- B-03 / BM-13: paint≡bind — source chords must clear+repaint when a keyed piece goes.
   if self.AfterBindChange then
@@ -149,11 +163,15 @@ function Mason:ClearCurrentKit()
       views[id] = nil
     end
   end
+  -- C-06: kit membership changed → rebind then full layout (not bind-only).
   local deferred = self:QueueIfCombat(function()
     for i = 1, #ids do
       self:ParkExecutor(ids[i])
     end
     self:ApplyOverrides()
+    if self.ApplyLayout then
+      self:ApplyLayout()
+    end
   end)
   -- B-03 / BM-13: kit clear removes keyed pieces — same store-driven clear+paint path.
   if self.AfterBindChange then
@@ -162,6 +180,8 @@ function Mason:ClearCurrentKit()
   return deferred
 end
 
+-- C-06: bind-only clear+rebind. Callers that change kit membership or visibility
+-- must ApplyLayout themselves (DeletePiece / ClearCurrentKit / login / spec / import).
 function Mason:ApplyOverrides()
   if InCombatLockdown() then
     return self:QueueIfCombat(function()
@@ -176,8 +196,5 @@ function Mason:ApplyOverrides()
     if piece.key and piece.key ~= "" then
       SetOverrideBindingClick(owner, false, piece.key, self:ExecutorName(piece.id), "LeftButton")
     end
-  end
-  if self.ApplyLayout then
-    self:ApplyLayout()
   end
 end
