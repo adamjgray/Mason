@@ -436,18 +436,18 @@ function Mason:SpellIDsMatch(a, b)
   return false
 end
 
--- Secure type=spell uses CastSpellByID for numbers. Many talent / replacement
--- spells (e.g. Greater Invisibility) no-op under CastSpellByID while icon and
--- hotkey highlight still work. CastSpellByName succeeds — arm the face with
--- the active override's localized name when available. Kit identity stays ID.
-function Mason:SpellActionForSecure(piece)
+-- Talent / replacement spells (e.g. Greater Invisibility): CastSpellByID no-ops
+-- while CastSpellByName works. LAB Spell handlers need a numeric _state_action
+-- (FindSpellBookSlotBySpellID). Split: LAB SetState keeps override ID; secure
+-- "spell" attribute gets the localized name for cast. Kit identity stays piece.spellID.
+function Mason:ResolveSpellCastIdentity(piece)
   if not piece then
-    return nil
+    return nil, nil
   end
   local id = tonumber(piece.spellID)
   local name = piece.spellName
+  local castId = id
   if id then
-    local castId = id
     if C_Spell and C_Spell.GetOverrideSpell then
       local ok, ov = pcall(C_Spell.GetOverrideSpell, id)
       ov = ok and tonumber(ov) or nil
@@ -467,10 +467,16 @@ function Mason:SpellActionForSecure(piece)
       name = GetSpellInfo(castId) or name
     end
   end
-  if type(name) == "string" and name ~= "" then
-    return name
+  if type(name) ~= "string" or name == "" then
+    name = nil
   end
-  return id or name
+  return castId, name
+end
+
+-- Localized name for SecureActionButton cast (CastSpellByName). Nil if unknown.
+function Mason:SpellActionForSecure(piece)
+  local _, name = self:ResolveSpellCastIdentity(piece)
+  return name
 end
 
 function Mason:NormalizeAssistedSpellID(id)
@@ -676,6 +682,10 @@ function Mason:RegisterFaceCallbacks()
       Mason:FitFace(button)
       Mason:HookFaceRange(button)
       Mason:ApplyFaceTypeOverrides(button)
+      -- LAB UpdateState may rewrite spell=labaction (numeric); keep CastSpellByName arm.
+      if button.masonSpellCastName and not InCombatLockdown() then
+        button:SetAttribute("spell", button.masonSpellCastName)
+      end
       local afterPiece = button.masonPieceId and Mason:FindPiece(button.masonPieceId)
       if afterPiece and afterPiece.type == "flyout" and not Mason.masonPopulatingFlyout and not button.masonFlyoutConfigured then
         if Mason.ConfigureFlyoutParent then
@@ -745,14 +755,21 @@ function Mason:ConfigureFace(exec, piece)
     exec:SetAttribute("spell", nil)
     exec:SetAttribute("flyout", nil)
     exec:SetAttribute("LABUseCustomFlyout", false)
+    exec.masonSpellCastName = nil
   elseif ptype == "spell" then
-    exec:SetState("0", "spell", self:SpellActionForSecure(piece) or piece.spellID or piece.spellName)
+    -- LAB _state_action must be numeric; cast attribute overridden to name below.
+    local labId, castName = self:ResolveSpellCastIdentity(piece)
+    exec:SetState("0", "spell", labId or piece.spellID or piece.spellName)
+    exec.masonSpellCastName = castName
   elseif ptype == "item" or ptype == "toy" then
     exec:SetState("0", "item", piece.itemID)
+    exec.masonSpellCastName = nil
   elseif ptype == "macro" then
     exec:SetState("0", "macro", piece.macroName)
+    exec.masonSpellCastName = nil
   else
     exec:SetState("0", "empty")
+    exec.masonSpellCastName = nil
   end
   exec:SetAttribute("type2", "")
   if exec.DisableDragNDrop then
@@ -790,6 +807,10 @@ function Mason:ConfigureFace(exec, piece)
   end
   if exec.UpdateAction then
     exec:UpdateAction(true)
+  end
+  -- SetState copies labaction → spell (numeric). Prefer CastSpellByName for talent spells.
+  if ptype == "spell" and exec.masonSpellCastName then
+    exec:SetAttribute("spell", exec.masonSpellCastName)
   end
   self:HookFaceRange(exec)
   self:ApplyFaceTypeOverrides(exec, piece)

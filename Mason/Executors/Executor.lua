@@ -27,6 +27,7 @@ function Mason:ConfigureExecutor(exec, piece)
   exec:SetAttribute("type", ptype)
   exec:SetAttribute("type2", "")
   if ptype == "spell" then
+    -- Non-LAB path: name for CastSpellByName; fall back to ID if name unknown.
     local spell = (self.SpellActionForSecure and self:SpellActionForSecure(piece))
       or piece.spellID
       or piece.spellName
