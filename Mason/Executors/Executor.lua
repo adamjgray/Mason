@@ -27,7 +27,11 @@ function Mason:ConfigureExecutor(exec, piece)
   exec:SetAttribute("type", ptype)
   exec:SetAttribute("type2", "")
   if ptype == "spell" then
-    exec:SetAttribute("spell", piece.spellID or piece.spellName)
+    -- Non-LAB path: name for CastSpellByName; fall back to ID if name unknown.
+    local spell = (self.SpellActionForSecure and self:SpellActionForSecure(piece))
+      or piece.spellID
+      or piece.spellName
+    exec:SetAttribute("spell", spell)
   elseif ptype == "item" or ptype == "toy" then
     exec:SetAttribute("item", piece.itemID)
   elseif ptype == "macro" then
