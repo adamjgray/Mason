@@ -305,6 +305,39 @@ function Mason:OnCombatLock()
   self:SetLocked(true)
 end
 
+-- Product: hide Options / exit Edit Mode / exit Binding Mode for combat; restore
+-- only surfaces that were open when combat started (see SuspendUiForCombat).
+function Mason:SuspendUiForCombat()
+  if self.HideOptionsForCombat then
+    self:HideOptionsForCombat()
+  end
+  if self.bindMode then
+    self.bindModeRestoreAfterCombat = true
+  end
+  if not self:IsLocked() then
+    self.editModeRestoreAfterCombat = true
+  end
+  self:OnCombatLock()
+end
+
+function Mason:RestoreUiAfterCombat()
+  if self.RestoreOptionsAfterCombat then
+    self:RestoreOptionsAfterCombat()
+  end
+  if self.editModeRestoreAfterCombat then
+    self.editModeRestoreAfterCombat = false
+    if self.SetLocked then
+      self:SetLocked(false)
+    end
+  end
+  if self.bindModeRestoreAfterCombat then
+    self.bindModeRestoreAfterCombat = false
+    if self.SetBindMode then
+      self:SetBindMode(true)
+    end
+  end
+end
+
 local ACTION_SLOT_MAX = 180
 
 function Mason:SnapshotActionSlots()

@@ -139,14 +139,16 @@ function Mason:RegisterRuntimeEvents()
       end
     elseif event == "PLAYER_REGEN_ENABLED" then
       self:FlushCombatQueue()
+      if self.RestoreUiAfterCombat then
+        self:RestoreUiAfterCombat()
+      end
       if self.PaintRules then
         self:PaintRules()
       end
     elseif event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_ENTERING_COMBAT" then
-      if self.ExitBindMode then
-        self:ExitBindMode()
+      if self.SuspendUiForCombat then
+        self:SuspendUiForCombat()
       end
-      self:OnCombatLock()
       if self.PaintRules then
         self:PaintRules()
       end
@@ -188,11 +190,12 @@ function Mason:RegisterRuntimeEvents()
   end)
   frame:SetScript("OnUpdate", function(_, elapsed)
     if InCombatLockdown() then
-      if self.ExitBindMode then
-        self:ExitBindMode()
-      end
-      if not self:IsLocked() then
-        self:OnCombatLock()
+      local panel = self.optionsPanel
+      local optionsOpen = panel and panel.IsShown and panel:IsShown()
+      if optionsOpen or self.bindMode or not self:IsLocked() then
+        if self.SuspendUiForCombat then
+          self:SuspendUiForCombat()
+        end
       end
     end
     if self.PollMasonPickup then

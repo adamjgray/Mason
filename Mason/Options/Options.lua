@@ -750,9 +750,8 @@ function Mason:EnsureOptionsFrame()
   panel:SetScript("OnMouseUp", function(self)
     self:StopMovingOrSizing()
   end)
-  -- No EnableKeyboard / OnKeyDown: capturing keys requires SetPropagateKeyboardInput
-  -- for bindings to reach the game, and that API is protected under lockdown. ESC
-  -- close is via UISpecialFrames below (works OOC and in combat without keyboard focus).
+  -- No EnableKeyboard / OnKeyDown. Product: Options is hidden in combat (see
+  -- HideOptionsForCombat); ESC while shown uses UISpecialFrames below.
   panel:SetScript("OnShow", function(self)
     self:SetFrameStrata("FULLSCREEN_DIALOG")
     self:Raise()
@@ -883,8 +882,26 @@ function Mason:EnsureOptionsFrame()
   return panel
 end
 
+function Mason:HideOptionsForCombat()
+  local panel = self.optionsPanel
+  if panel and panel.IsShown and panel:IsShown() then
+    self.optionsRestoreAfterCombat = true
+    panel:Hide()
+  end
+end
+
+function Mason:RestoreOptionsAfterCombat()
+  if not self.optionsRestoreAfterCombat then
+    return
+  end
+  self.optionsRestoreAfterCombat = false
+  self:OpenOptions()
+end
+
 function Mason:OpenOptions()
-  if InCombatLockdown() and not self.optionsPanel then
+  -- Product: Options stays closed during combat; reopen via RestoreUiAfterCombat
+  -- if we hid it, or via QueueIfCombat if the user asked to open while locked down.
+  if InCombatLockdown() then
     self:QueueIfCombat(function()
       Mason:OpenOptions()
     end)
