@@ -87,8 +87,8 @@ function Mason:OnAceProfileChanged()
     if Mason.ApplyLayout then
       Mason:ApplyLayout()
     end
-    if Mason.RefreshBlizzardHotkeys then
-      Mason:RefreshBlizzardHotkeys()
+    if Mason.RepaintSourceHotkeys then
+      Mason:RepaintSourceHotkeys()
     end
     if Mason.RefreshPiecesTable then
       Mason:RefreshPiecesTable()

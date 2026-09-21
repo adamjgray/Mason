@@ -72,10 +72,9 @@ function Mason:OnEnable()
     if self.InstallHotkeyFrameHooks then
       self:InstallHotkeyFrameHooks()
     end
+    -- B-02: sole store painter entry (deferred spellbook schedule → RepaintSourceHotkeys).
     if self.ScheduleSpellbookHotkeys then
       self:ScheduleSpellbookHotkeys()
-    elseif self.RefreshBlizzardHotkeys then
-      self:RefreshBlizzardHotkeys()
     end
   end)
 end
@@ -100,8 +99,8 @@ function Mason:RegisterRuntimeEvents()
       self:QueueIfCombat(function()
         self:ApplyOverrides()
         self:ApplyLayout()
-        if self.RefreshBlizzardHotkeys then
-          self:RefreshBlizzardHotkeys()
+        if self.RepaintSourceHotkeys then
+          self:RepaintSourceHotkeys()
         end
       end)
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
@@ -113,12 +112,6 @@ function Mason:RegisterRuntimeEvents()
       end
       if self.ScheduleSpellbookHotkeys then
         self:ScheduleSpellbookHotkeys()
-      elseif self.RequestBlizzardHotkeys then
-        self:RequestBlizzardHotkeys()
-      elseif self.RefreshBlizzardHotkeys then
-        self:QueueIfCombat(function()
-          Mason:RefreshBlizzardHotkeys()
-        end)
       end
     elseif event == "ADDON_LOADED" then
       local addonName = ...
@@ -143,10 +136,6 @@ function Mason:RegisterRuntimeEvents()
     elseif event == "SPELLS_CHANGED" then
       if self.ScheduleSpellbookHotkeys then
         self:ScheduleSpellbookHotkeys()
-      elseif self.RequestBlizzardHotkeys then
-        self:RequestBlizzardHotkeys()
-      elseif self.RefreshBlizzardHotkeys then
-        self:RefreshBlizzardHotkeys()
       end
     elseif event == "PLAYER_REGEN_ENABLED" then
       self:FlushCombatQueue()
@@ -177,21 +166,12 @@ function Mason:RegisterRuntimeEvents()
       if event == "BAG_UPDATE_DELAYED" and self.RefreshItemCounts then
         self:RefreshItemCounts()
       end
-      -- Always-on store paint on bag updates; attach only needed in kb (ScheduleBagFollowup).
+      -- B-02: bag events → ScheduleBagFollowup only (no dual Repaint / Refresh fallback).
       if self.ScheduleBagFollowup then
         self:ScheduleBagFollowup()
-      elseif self.RepaintSourceHotkeys then
-        self:RepaintSourceHotkeys()
-      elseif self.PassBagsRaiseAndPaint then
-        self:PassBagsRaiseAndPaint(true)
       end
       if self.HookLateFrameOnShow then
         self:HookLateFrameOnShow(_G.ContainerFrameCombinedBags, "bags")
-      end
-      if self.RepaintSourceHotkeys then
-        self:RepaintSourceHotkeys()
-      elseif self.RefreshBlizzardHotkeys then
-        self:RefreshBlizzardHotkeys()
       end
     elseif event == "ASSISTED_COMBAT_ACTION_SPELL_CAST" then
       if self.OnAssistedSpellSignal then
