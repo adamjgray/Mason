@@ -135,10 +135,15 @@ function Mason:DeletePiece(id)
   if views then
     views[id] = nil
   end
-  return self:QueueIfCombat(function()
+  local deferred = self:QueueIfCombat(function()
     self:ParkExecutor(id)
     self:ApplyOverrides()
   end)
+  -- B-03 / BM-13: paint≡bind — source chords must clear+repaint when a keyed piece goes.
+  if self.AfterBindChange then
+    self:AfterBindChange()
+  end
+  return deferred
 end
 
 function Mason:ClearCurrentKit()
@@ -155,12 +160,17 @@ function Mason:ClearCurrentKit()
       views[id] = nil
     end
   end
-  return self:QueueIfCombat(function()
+  local deferred = self:QueueIfCombat(function()
     for i = 1, #ids do
       self:ParkExecutor(ids[i])
     end
     self:ApplyOverrides()
   end)
+  -- B-03 / BM-13: kit clear removes keyed pieces — same store-driven clear+paint path.
+  if self.AfterBindChange then
+    self:AfterBindChange()
+  end
+  return deferred
 end
 
 function Mason:ApplyOverrides()

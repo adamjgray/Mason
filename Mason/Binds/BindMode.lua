@@ -699,6 +699,43 @@ local function EachRegistryCell(kind, fn)
   end
 end
 
+-- B-03 / BM-07: drop hidden or dead frames so registry cannot grow forever across
+-- open/close and ScrollBox recycle. Live collectors + Stamp/Remember repopulate.
+local function IsAliveKbCell(btn)
+  if not btn then
+    return false
+  end
+  local ok, objType = pcall(function()
+    return btn.GetObjectType and btn:GetObjectType()
+  end)
+  if not ok or not objType then
+    return false
+  end
+  if btn.IsForbidden and btn:IsForbidden() then
+    return false
+  end
+  if btn.IsShown and not btn:IsShown() then
+    return false
+  end
+  return true
+end
+
+local function PruneKbCellRegistry()
+  for _, bucket in pairs(kbCellRegistry) do
+    if type(bucket) == "table" then
+      local drop = {}
+      for btn in pairs(bucket) do
+        if not IsAliveKbCell(btn) then
+          drop[#drop + 1] = btn
+        end
+      end
+      for i = 1, #drop do
+        bucket[drop[i]] = nil
+      end
+    end
+  end
+end
+
 local function StampKbIdentity(btn, kind, id)
   if not btn or id == nil or id == "" then
     return
@@ -1594,8 +1631,12 @@ function Mason:AttachKbHover(button, kind, id)
   if not button or not CanUndimFrame(button) then
     return
   end
-  button.masonKbKind = kind
-  button.masonKbId = id
+  -- B-03 / BM-20: stamp only when id present; never leave kind-without-id.
+  if id ~= nil and id ~= "" then
+    StampKbIdentity(button, kind, id)
+  else
+    ClearKbIdentity(button)
+  end
   if button.masonKbHook or button.masonKbHoverHook or not button.HookScript then
     return
   end
@@ -3402,24 +3443,28 @@ function Mason:RequestBlizzardHotkeys()
 end
 
 function Mason:ClearSourceHotkeys()
-  local tracked = self.blizzardHotkeyButtons
-  if not tracked then
-    return
+  -- B-03 / BM-06: clear visual + ClearKbIdentity for every tracked host (all kinds),
+  -- not items only — ScrollBox recycle must not keep ghost stamps for book/toys/macros.
+  local function clearHost(btn)
+    if not btn then
+      return
+    end
+    ClearHotkeyVisual(btn)
+    ClearKbIdentity(btn)
   end
-  for btn in pairs(tracked) do
-    if btn then
-      local fs = btn.masonHotkey
-      if fs then
-        fs:SetText("")
-        fs:Hide()
-      end
-      -- Drop durable stamps so recycle/empty cells cannot repaint ghosts.
-      if btn.masonKbKind == "item" or IsBagItemButton(btn) then
-        ClearKbIdentity(btn)
-      end
+  local tracked = self.blizzardHotkeyButtons
+  if tracked then
+    for btn in pairs(tracked) do
+      clearHost(btn)
     end
   end
   self.blizzardHotkeyButtons = {}
+  -- Registry cells may carry stamps without being in blizzardHotkeyButtons (collector/
+  -- acquire StampKbIdentity). Clear them too, then prune dead/hidden entries (BM-07).
+  for kind in pairs(kbCellRegistry) do
+    EachRegistryCell(kind, clearHost)
+  end
+  PruneKbCellRegistry()
 end
 
 function Mason:RepaintSourceHotkeys()
