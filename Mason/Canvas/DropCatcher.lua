@@ -224,10 +224,6 @@ function Mason:PlaceCursorAction(action, x, y)
 end
 
 function Mason:HandleCanvasDrop()
-  if InCombatLockdown() then
-    self:Notify("cannot place in combat")
-    return
-  end
   local action, err = self:ParseCursorAction()
   if err == "ambiguous" then
     return
@@ -254,6 +250,16 @@ function Mason:HandleCanvasDrop()
     return
   end
   local x, y = self:GetCursorUIPosition()
+  if InCombatLockdown() then
+    -- Snapshot action + xy, clear cursor, queue place (SPEC/02-phase2-canvas.md).
+    ClearCursor()
+    self:SyncDropCatcher()
+    print("Mason: queued until combat ends")
+    self:QueueIfCombat(function()
+      self:PlaceCursorAction(action, x, y)
+    end)
+    return
+  end
   self:PlaceCursorAction(action, x, y)
   ClearCursor()
   self:SyncDropCatcher()
