@@ -742,7 +742,6 @@ function Mason:EnsureOptionsFrame()
   panel:SetFrameLevel(220)
   panel:EnableMouse(true)
   panel:SetMovable(true)
-  panel:EnableKeyboard(true)
   panel:Hide()
   SkinPanel(panel)
   panel:SetScript("OnMouseDown", function(self)
@@ -751,20 +750,9 @@ function Mason:EnsureOptionsFrame()
   panel:SetScript("OnMouseUp", function(self)
     self:StopMovingOrSizing()
   end)
-  panel:SetScript("OnKeyDown", function(self, key)
-    if key == "ESCAPE" then
-      -- SetPropagateKeyboardInput is protected; skip under lockdown.
-      -- Hide remains safe in combat for this insecure options frame.
-      if not InCombatLockdown() and self.SetPropagateKeyboardInput then
-        self:SetPropagateKeyboardInput(false)
-      end
-      self:Hide()
-      return
-    end
-    if not InCombatLockdown() and self.SetPropagateKeyboardInput then
-      self:SetPropagateKeyboardInput(true)
-    end
-  end)
+  -- No EnableKeyboard / OnKeyDown: capturing keys requires SetPropagateKeyboardInput
+  -- for bindings to reach the game, and that API is protected under lockdown. ESC
+  -- close is via UISpecialFrames below (works OOC and in combat without keyboard focus).
   panel:SetScript("OnShow", function(self)
     self:SetFrameStrata("FULLSCREEN_DIALOG")
     self:Raise()
