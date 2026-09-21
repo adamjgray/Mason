@@ -120,6 +120,26 @@ function Mason:RegisterRuntimeEvents()
           Mason:RefreshBlizzardHotkeys()
         end)
       end
+    elseif event == "ADDON_LOADED" then
+      local addonName = ...
+      if addonName == "Blizzard_PlayerSpells" or addonName == "Blizzard_Collections" or addonName == "Blizzard_MacroUI" then
+        if self.InstallBindBagHooks then
+          self:InstallBindBagHooks()
+        end
+        if self.InstallHotkeyFrameHooks then
+          self:InstallHotkeyFrameHooks()
+        end
+        if addonName == "Blizzard_PlayerSpells" and self.ScheduleSpellbookHotkeys then
+          self:ScheduleSpellbookHotkeys()
+        elseif addonName == "Blizzard_Collections" and self.RequestBlizzardHotkeys then
+          self:RequestBlizzardHotkeys()
+        elseif addonName == "Blizzard_MacroUI" and self.OnMacroOpened then
+          -- Macro UI loaded; paint if already shown.
+          if _G.MacroFrame and _G.MacroFrame.IsShown and _G.MacroFrame:IsShown() then
+            self:OnMacroOpened()
+          end
+        end
+      end
     elseif event == "SPELLS_CHANGED" then
       if self.ScheduleSpellbookHotkeys then
         self:ScheduleSpellbookHotkeys()
@@ -157,22 +177,20 @@ function Mason:RegisterRuntimeEvents()
       if event == "BAG_UPDATE_DELAYED" and self.RefreshItemCounts then
         self:RefreshItemCounts()
       end
-      if self.KbWantsRaise and self:KbWantsRaise() then
-        if self.PassBagsRaiseAndPaint then
-          self:PassBagsRaiseAndPaint(true)
-        elseif self.RaiseBindBagFrames then
-          self:RaiseBindBagFrames()
-        elseif self.RaiseBindUndimmedFrames then
-          self:RaiseBindUndimmedFrames()
-        end
-        if self.masonBagNeedButtons and self.ScheduleBagFillWatch then
-          self:ScheduleBagFillWatch()
-        end
-        if self.HookLateFrameOnShow then
-          self:HookLateFrameOnShow(_G.ContainerFrameCombinedBags, "bags")
-        end
+      -- Always-on store paint on bag updates; attach only needed in kb (ScheduleBagFollowup).
+      if self.ScheduleBagFollowup then
+        self:ScheduleBagFollowup()
+      elseif self.RepaintSourceHotkeys then
+        self:RepaintSourceHotkeys()
+      elseif self.PassBagsRaiseAndPaint then
+        self:PassBagsRaiseAndPaint(true)
       end
-      if self.RefreshBlizzardHotkeys then
+      if self.HookLateFrameOnShow then
+        self:HookLateFrameOnShow(_G.ContainerFrameCombinedBags, "bags")
+      end
+      if self.RepaintSourceHotkeys then
+        self:RepaintSourceHotkeys()
+      elseif self.RefreshBlizzardHotkeys then
         self:RefreshBlizzardHotkeys()
       end
     elseif event == "ASSISTED_COMBAT_ACTION_SPELL_CAST" then
@@ -216,6 +234,7 @@ function Mason:RegisterRuntimeEvents()
   frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
   frame:RegisterEvent("PLAYER_LOGIN")
   frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+  frame:RegisterEvent("ADDON_LOADED")
   frame:RegisterEvent("SPELLS_CHANGED")
   frame:RegisterEvent("PLAYER_TARGET_CHANGED")
   frame:RegisterEvent("PLAYER_REGEN_ENABLED")

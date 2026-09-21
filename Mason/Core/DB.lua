@@ -305,7 +305,9 @@ function Mason:FindPieceByAction(ptype, fields)
   for _, piece in pairs(self:GetKit()) do
     if ptype == "spell" and piece.type == "spell" and SpellIdsMatch(piece.spellID, fields.spellID) then
       return piece
-    elseif (ptype == "item" or ptype == "toy") and (piece.type == "item" or piece.type == "toy") and piece.itemID == fields.itemID then
+    elseif (ptype == "item" or ptype == "toy") and (piece.type == "item" or piece.type == "toy")
+      and tonumber(piece.itemID) and tonumber(fields.itemID)
+      and tonumber(piece.itemID) == tonumber(fields.itemID) then
       return piece
     elseif ptype == "macro" and piece.type == "macro" and piece.macroName == fields.macroName then
       return piece

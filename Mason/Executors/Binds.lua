@@ -118,7 +118,12 @@ function Mason:AfterBindChange()
   if self.RefreshPiecesTable then
     self:RefreshPiecesTable()
   end
-  if self.RefreshBlizzardHotkeys then
+  -- 09ab: store-driven clear+paint — never paint from keypress success alone.
+  if self.RepaintSourceHotkeys then
+    self:QueueIfCombat(function()
+      Mason:RepaintSourceHotkeys()
+    end)
+  elseif self.RefreshBlizzardHotkeys then
     self:QueueIfCombat(function()
       Mason:RefreshBlizzardHotkeys()
     end)
