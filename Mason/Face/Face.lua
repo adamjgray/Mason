@@ -688,6 +688,13 @@ function Mason:ConfigureFace(exec, piece)
   if not exec or not piece or not exec.SetState then
     return
   end
+  -- C-05 / SAFE-01: never SetState/SetAttribute in lockdown; queue for regen.
+  if InCombatLockdown() then
+    self:QueueIfCombat(function()
+      Mason:ConfigureFace(exec, piece)
+    end)
+    return
+  end
   local ptype = piece.type or "spell"
   if ptype == "flyout" then
     if not self.masonPopulatingFlyout and not exec.masonFlyoutConfigured then
@@ -695,13 +702,11 @@ function Mason:ConfigureFace(exec, piece)
         self:ConfigureFlyoutParent(exec, piece)
       end
     end
-    if not InCombatLockdown() then
-      exec:SetAttribute("type", "")
-      exec:SetAttribute("type2", "")
-      exec:SetAttribute("spell", nil)
-      exec:SetAttribute("flyout", nil)
-      exec:SetAttribute("LABUseCustomFlyout", false)
-    end
+    exec:SetAttribute("type", "")
+    exec:SetAttribute("type2", "")
+    exec:SetAttribute("spell", nil)
+    exec:SetAttribute("flyout", nil)
+    exec:SetAttribute("LABUseCustomFlyout", false)
   elseif ptype == "spell" then
     exec:SetState("0", "spell", piece.spellID or piece.spellName)
   elseif ptype == "item" or ptype == "toy" then
@@ -809,8 +814,23 @@ end
 
 function Mason:EnsureExecutor(piece)
   self:RegisterFaceCallbacks()
+  if not piece or not piece.id then
+    return nil
+  end
   local name = self:ExecutorName(piece.id)
   local exec = self.executors[piece.id] or _G[name]
+  -- C-05 / SAFE-01: never CreateFrame / SetAttribute / SetState in lockdown.
+  -- Return an existing exec if present; queue full ensure+configure for regen.
+  if InCombatLockdown() then
+    self:QueueIfCombat(function()
+      Mason:EnsureExecutor(piece)
+    end)
+    if exec then
+      exec.masonPieceId = piece.id
+      self.executors[piece.id] = exec
+    end
+    return exec
+  end
   if exec then
     exec.masonPieceId = piece.id
     self.executors[piece.id] = exec
@@ -848,9 +868,7 @@ function Mason:EnsureExecutor(piece)
   end
   local numericId = tonumber((tostring(piece.id):match("%d+"))) or 1
   exec = LAB:CreateButton(numericId, name, self:GetLABHeader(), FACE_CONFIG)
-  if not InCombatLockdown() then
-    exec:SetParent(UIParent)
-  end
+  exec:SetParent(UIParent)
   exec:SetSize(1, 1)
   exec:ClearAllPoints()
   exec:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -2000, -2000)
