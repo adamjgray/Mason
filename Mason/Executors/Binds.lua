@@ -76,14 +76,9 @@ function Mason:SetPieceKey(id, key, overwrite)
     line = line .. " (was " .. previous .. ")"
   end
   messages[#messages + 1] = line
-  local deferred
-  if self:IsDebug() then
-    deferred = self:ApplyOverridesAndNotify(messages)
-  else
-    deferred = self:QueueIfCombat(function()
-      self:ApplyOverrides()
-    end)
-  end
+  -- C-01: steal/move toasts always notify (SPEC 00-identity #3 / 01 steal+toast).
+  -- Verbose debug extras stay behind IsDebug elsewhere; not these product toasts.
+  local deferred = self:ApplyOverridesAndNotify(messages)
   if self.AfterBindChange then
     self:AfterBindChange()
   end
@@ -100,14 +95,8 @@ function Mason:ClearPieceKey(id)
     messages[#messages + 1] = "unbound " .. Label(piece)
   end
   piece.key = nil
-  local deferred
-  if self:IsDebug() and #messages > 0 then
-    deferred = self:ApplyOverridesAndNotify(messages)
-  else
-    deferred = self:QueueIfCombat(function()
-      self:ApplyOverrides()
-    end)
-  end
+  -- C-01: unbind toast always notifies when a key was cleared.
+  local deferred = self:ApplyOverridesAndNotify(messages)
   if self.AfterBindChange then
     self:AfterBindChange()
   end
