@@ -181,13 +181,14 @@ function Mason:HookFaceRange(exec)
       unit = nil
     end
     unit = unit or "target"
+    -- Item: do not call IsItemInRange / C_Item.IsItemInRange — protected in LAB
+    -- poll context (upstream LAB leaves Item.IsUnitInRange unset for the same reason).
     if self._state_type == "spell" and self._state_action then
       if C_Spell and C_Spell.IsSpellInRange then
-        return C_Spell.IsSpellInRange(self._state_action, unit)
-      end
-    elseif self._state_type == "item" and self._state_action then
-      if C_Item and C_Item.IsItemInRange then
-        return C_Item.IsItemInRange(self._state_action, unit)
+        local ok, inRange = pcall(C_Spell.IsSpellInRange, self._state_action, unit)
+        if ok then
+          return inRange
+        end
       end
     end
     return nil
