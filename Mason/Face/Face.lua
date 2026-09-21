@@ -436,6 +436,43 @@ function Mason:SpellIDsMatch(a, b)
   return false
 end
 
+-- Secure type=spell uses CastSpellByID for numbers. Many talent / replacement
+-- spells (e.g. Greater Invisibility) no-op under CastSpellByID while icon and
+-- hotkey highlight still work. CastSpellByName succeeds — arm the face with
+-- the active override's localized name when available. Kit identity stays ID.
+function Mason:SpellActionForSecure(piece)
+  if not piece then
+    return nil
+  end
+  local id = tonumber(piece.spellID)
+  local name = piece.spellName
+  if id then
+    local castId = id
+    if C_Spell and C_Spell.GetOverrideSpell then
+      local ok, ov = pcall(C_Spell.GetOverrideSpell, id)
+      ov = ok and tonumber(ov) or nil
+      if ov and ov > 0 then
+        castId = ov
+      end
+    elseif FindSpellOverrideBySpellID then
+      local ok, ov = pcall(FindSpellOverrideBySpellID, id)
+      ov = ok and tonumber(ov) or nil
+      if ov and ov > 0 then
+        castId = ov
+      end
+    end
+    if C_Spell and C_Spell.GetSpellName then
+      name = C_Spell.GetSpellName(castId) or name
+    elseif GetSpellInfo then
+      name = GetSpellInfo(castId) or name
+    end
+  end
+  if type(name) == "string" and name ~= "" then
+    return name
+  end
+  return id or name
+end
+
 function Mason:NormalizeAssistedSpellID(id)
   id = tonumber(id)
   if not id or id == 0 then
@@ -709,7 +746,7 @@ function Mason:ConfigureFace(exec, piece)
     exec:SetAttribute("flyout", nil)
     exec:SetAttribute("LABUseCustomFlyout", false)
   elseif ptype == "spell" then
-    exec:SetState("0", "spell", piece.spellID or piece.spellName)
+    exec:SetState("0", "spell", self:SpellActionForSecure(piece) or piece.spellID or piece.spellName)
   elseif ptype == "item" or ptype == "toy" then
     exec:SetState("0", "item", piece.itemID)
   elseif ptype == "macro" then
