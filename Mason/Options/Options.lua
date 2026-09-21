@@ -753,13 +753,15 @@ function Mason:EnsureOptionsFrame()
   end)
   panel:SetScript("OnKeyDown", function(self, key)
     if key == "ESCAPE" then
-      if self.SetPropagateKeyboardInput then
+      -- SetPropagateKeyboardInput is protected; skip under lockdown.
+      -- Hide remains safe in combat for this insecure options frame.
+      if not InCombatLockdown() and self.SetPropagateKeyboardInput then
         self:SetPropagateKeyboardInput(false)
       end
       self:Hide()
       return
     end
-    if self.SetPropagateKeyboardInput then
+    if not InCombatLockdown() and self.SetPropagateKeyboardInput then
       self:SetPropagateKeyboardInput(true)
     end
   end)
