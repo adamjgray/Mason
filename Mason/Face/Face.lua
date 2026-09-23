@@ -624,6 +624,26 @@ function Mason:SyncAssistedSpell()
   self:RefreshAssistedHighlights()
 end
 
+function Mason:IsAssistedHighlightRingEnabled()
+  if not self.db or not self.db.profile then
+    return true
+  end
+  if self.db.profile.assistedHighlightRing == nil then
+    return true
+  end
+  return not not self.db.profile.assistedHighlightRing
+end
+
+function Mason:SetAssistedHighlightRingEnabled(enabled)
+  if not self.db or not self.db.profile then
+    return
+  end
+  self.db.profile.assistedHighlightRing = not not enabled
+  if self.RefreshAssistedHighlights then
+    self:RefreshAssistedHighlights()
+  end
+end
+
 function Mason:GetAssistedNextCastSpellID()
   if AssistedCombatManager and AssistedCombatManager.lastNextCastSpellID
     and AssistedCombatManager.lastNextCastSpellID ~= 0 then
@@ -631,6 +651,10 @@ function Mason:GetAssistedNextCastSpellID()
   end
   if C_AssistedCombat and C_AssistedCombat.GetNextCastSpell then
     local id = C_AssistedCombat.GetNextCastSpell(false)
+    if id and id ~= 0 then
+      return tonumber(id)
+    end
+    id = C_AssistedCombat.GetNextCastSpell(true)
     if id and id ~= 0 then
       return tonumber(id)
     end
@@ -668,8 +692,33 @@ function Mason:IsAssistedCombatPiece(piece)
   return actionId and sid and sid == actionId
 end
 
+function Mason:ScheduleAssistedCombatIconRetry(exec)
+  if not exec or exec.masonAssistedIconRetry then
+    return
+  end
+  exec.masonAssistedIconRetry = true
+  if AssistedCombatManager and AssistedCombatManager.ForceUpdateAtEndOfFrame then
+    pcall(function()
+      AssistedCombatManager:ForceUpdateAtEndOfFrame()
+    end)
+  end
+  local delays = { 0, 0, 0.05, 0.15, 0.35 }
+  for i = 1, #delays do
+    local last = i == #delays
+    C_Timer.After(delays[i], function()
+      if last then
+        exec.masonAssistedIconRetry = nil
+      end
+      if exec and exec.masonPieceId and Mason.UpdateAssistedCombatButtonIcon then
+        Mason:UpdateAssistedCombatButtonIcon(exec)
+      end
+    end)
+  end
+end
+
 -- Blizzard action bars ForceUpdateAction so the slot icon tracks next-cast.
 -- Mason faces are LAB spells, not action slots — paint next-cast texture on icon.
+-- Never bake the generic assisted-action glyph into the icon cache (first-paint).
 function Mason:UpdateAssistedCombatButtonIcon(exec)
   if not exec or not exec.icon then
     return
@@ -679,9 +728,12 @@ function Mason:UpdateAssistedCombatButtonIcon(exec)
     return
   end
   local texId = self:GetAssistedNextCastSpellID()
-    or self:GetAssistedActionSpellID()
-    or tonumber(piece.spellID)
   if not texId then
+    -- Prefer blank over the generic assistant glyph until next-cast is known.
+    if not exec.masonAssistedIconSpell then
+      exec.icon:SetTexture(0)
+    end
+    self:ScheduleAssistedCombatIconRetry(exec)
     return
   end
   if exec.masonAssistedIconSpell == texId then
@@ -700,6 +752,9 @@ function Mason:UpdateAssistedCombatButtonIcon(exec)
 end
 
 function Mason:AssistedShouldShow(exec)
+  if not self:IsAssistedHighlightRingEnabled() then
+    return false
+  end
   if not exec or not exec.masonPieceId then
     return false
   end

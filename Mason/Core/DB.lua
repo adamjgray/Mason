@@ -10,6 +10,8 @@ local defaults = {
     gridSize = 32,
     defaultSize = nil,
     debug = false,
+    -- Assisted combat highlight ring on recommended faces (Blizzard-like). Default on.
+    assistedHighlightRing = true,
   },
   char = {
     locked = true,
