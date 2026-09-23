@@ -99,6 +99,70 @@ function Mason:SyncEditBarBindButton()
   end
 end
 
+-- Done: keep live layout writes, lock edit.
+function Mason:ConfirmEditMode()
+  if InCombatLockdown() then
+    print("Mason: cannot edit in combat")
+    return false
+  end
+  if not self:InEditMode() then
+    return false
+  end
+  self:SetLocked(true)
+  self:DebugPrint("Mason: edit off")
+  return true
+end
+
+-- Cancel: restore unlock-time views snapshot, then lock.
+function Mason:CancelEditMode()
+  if InCombatLockdown() then
+    print("Mason: cannot cancel edit in combat")
+    return false
+  end
+  if not self:InEditMode() then
+    return false
+  end
+  self:RestoreEditViewsSnapshot()
+  self:SetLocked(true)
+  self:DebugPrint("Mason: edit off")
+  return true
+end
+
+-- Edit chrome keys: ESC = Cancel (or clear selection first); Enter = Done.
+-- Kb mode leaves ESC to BindMode (unbind / exit kb).
+function Mason:HandleEditChromeKey(key)
+  if self.bindMode then
+    return false
+  end
+  if key == "ESCAPE" then
+    if self.optionsPanel and self.optionsPanel.IsShown and self.optionsPanel:IsShown() then
+      self.optionsPanel:Hide()
+      return true
+    end
+  end
+  if not self:InEditMode() then
+    return false
+  end
+  if key == "ESCAPE" then
+    local had = false
+    for _ in pairs(self.selectedIds or {}) do
+      had = true
+      break
+    end
+    if had then
+      if self.ClearSelection then
+        self:ClearSelection()
+      end
+      return true
+    end
+    return self:CancelEditMode()
+  end
+  if key == "ENTER" then
+    return self:ConfirmEditMode()
+  end
+  return false
+end
+
 function Mason:EnsureEditBar()
   if self.editBar then
     return self.editBar
@@ -135,21 +199,10 @@ function Mason:EnsureEditBar()
     return btn
   end
   bar.lockBtn = MakeBtn("Done", -138, function()
-    if InCombatLockdown() then
-      print("Mason: cannot edit in combat")
-      return
-    end
-    Mason:SetLocked(true)
-    Mason:DebugPrint("Mason: edit off")
+    Mason:ConfirmEditMode()
   end)
   bar.cancelBtn = MakeBtn("Cancel", -46, function()
-    if InCombatLockdown() then
-      print("Mason: cannot cancel edit in combat")
-      return
-    end
-    Mason:RestoreEditViewsSnapshot()
-    Mason:SetLocked(true)
-    Mason:DebugPrint("Mason: edit off")
+    Mason:CancelEditMode()
   end)
   bar.kbBtn = MakeBtn("Keybind", 46, function()
     if Mason.ToggleBindMode then
