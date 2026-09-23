@@ -36,7 +36,7 @@ local function SkinMasonPanel(frame)
 end
 
 local function PanelButtons(panel)
-  return { panel.doneBtn, panel.lockBtn, panel.cancelBtn, panel.kbBtn, panel.configBtn }
+  return { panel.doneBtn }
 end
 
 local function CatcherFrameLevel()
@@ -85,32 +85,6 @@ local function PrepareMasonPanelShow(panel)
       CatcherFrameLevel()
     ))
   end
-end
-
-local function CopyValue(v)
-  if type(v) ~= "table" then
-    return v
-  end
-  if CopyTable then
-    return CopyTable(v)
-  end
-  local out = {}
-  for k, val in pairs(v) do
-    out[k] = CopyValue(val)
-  end
-  return out
-end
-
-function Mason:TakeEditViewsSnapshot()
-  self.editViewsSnapshot = CopyValue(self:GetViews())
-end
-
-function Mason:RestoreEditViewsSnapshot()
-  if not self.editViewsSnapshot then
-    return false
-  end
-  self.db.profile.views = CopyValue(self.editViewsSnapshot)
-  return true
 end
 
 function Mason:IsBindMode()
@@ -2640,7 +2614,9 @@ function Mason:SetBindMode(on)
     self:HideBindVeil()
     self:DebugPrint("Mason: keybind off")
   end
-  self:SyncEditBarBindButton()
+  if self.SyncEditBarBindButton then
+    self:SyncEditBarBindButton()
+  end
   if self.SyncOptionsRail then
     self:SyncOptionsRail()
   end
@@ -2666,7 +2642,9 @@ function Mason:ExitBindMode()
     self:HideBindHoverHighlight()
     self:HideBindVeil()
     self:DebugPrint("Mason: keybind off")
-    self:SyncEditBarBindButton()
+    if self.SyncEditBarBindButton then
+      self:SyncEditBarBindButton()
+    end
     if self.SyncOptionsRail then
       self:SyncOptionsRail()
     end
@@ -2789,177 +2767,6 @@ function Mason:UpdateBindHoverHighlight()
   glow:SetPoint("TOPLEFT", glowFrame, "TOPLEFT", -2, 2)
   glow:SetPoint("BOTTOMRIGHT", glowFrame, "BOTTOMRIGHT", 2, -2)
   glow:Show()
-end
-
-function Mason:SyncEditBarBindButton()
-  local bar = self.editBar
-  if bar and bar.kbBtn then
-    bar.kbBtn:SetText(self.bindMode and "Binding…" or "Keybind")
-  end
-end
-
-function Mason:EnsureEditBar()
-  if self.editBar then
-    return self.editBar
-  end
-  if InCombatLockdown() then
-    return nil
-  end
-  local bar = CreateFrame("Frame", "MasonEditBar", UIParent, "BackdropTemplate")
-  bar:SetSize(460, 118)
-  bar:SetPoint("TOP", UIParent, "TOP", 0, -80)
-  bar:SetFrameStrata(PANEL_STRATA)
-  bar:SetFrameLevel(PANEL_LEVEL)
-  bar:EnableMouse(true)
-  bar:Hide()
-  SkinMasonPanel(bar)
-  local title = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  title:SetPoint("TOP", bar, "TOP", 0, -10)
-  title:SetText("Mason edit")
-  bar.title = title
-  local body = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  body:SetPoint("TOPLEFT", bar, "TOPLEFT", 16, -34)
-  body:SetPoint("TOPRIGHT", bar, "TOPRIGHT", -16, -34)
-  body:SetJustifyH("LEFT")
-  body:SetJustifyV("TOP")
-  body:SetWordWrap(true)
-  body:SetText("Drag to move. Shift-click select. Wheel scale.")
-  local function MakeBtn(text, x, onclick)
-    local btn = CreateFrame("Button", nil, bar, "UIPanelButtonTemplate")
-    btn:SetSize(80, 22)
-    btn:SetPoint("BOTTOM", bar, "BOTTOM", x, 10)
-    btn:SetText(text)
-    btn:EnableMouse(true)
-    btn:SetScript("OnClick", onclick)
-    return btn
-  end
-  bar.lockBtn = MakeBtn("Done", -138, function()
-    if InCombatLockdown() then
-      print("Mason: cannot edit in combat")
-      return
-    end
-    Mason:SetLocked(true)
-    Mason:DebugPrint("Mason: edit off")
-  end)
-  bar.cancelBtn = MakeBtn("Cancel", -46, function()
-    if InCombatLockdown() then
-      print("Mason: cannot cancel edit in combat")
-      return
-    end
-    Mason:RestoreEditViewsSnapshot()
-    Mason:SetLocked(true)
-    Mason:DebugPrint("Mason: edit off")
-  end)
-  bar.kbBtn = MakeBtn("Keybind", 46, function()
-    Mason:ToggleBindMode()
-  end)
-  bar.configBtn = MakeBtn("Config", 138, function()
-    if Mason.OpenOptions then
-      Mason:OpenOptions()
-    end
-  end)
-  self.editBar = bar
-  self:SyncEditBarBindButton()
-  return bar
-end
-
-function Mason:ShowEditBar()
-  local bar = self:EnsureEditBar()
-  if bar and self:InEditMode() then
-    PrepareMasonPanelShow(bar)
-    self:SyncEditBarBindButton()
-  end
-end
-
-function Mason:HideEditBar()
-  if self.editBar then
-    self.editBar:Hide()
-    self.editBar:EnableMouse(false)
-  end
-end
-
-function Mason:EnsureBindOverwriteDialog()
-  if self.bindOverwrite then
-    return self.bindOverwrite
-  end
-  if InCombatLockdown() then
-    return nil
-  end
-  local panel = CreateFrame("Frame", "MasonBindOverwrite", UIParent, "BackdropTemplate")
-  panel:SetSize(420, 140)
-  panel:SetPoint("CENTER")
-  panel:SetFrameStrata("TOOLTIP")
-  panel:SetFrameLevel(1)
-  panel:EnableMouse(false)
-  panel:Hide()
-  SkinMasonPanel(panel)
-  local body = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  body:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -20)
-  body:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -16, -20)
-  body:SetJustifyH("LEFT")
-  body:SetJustifyV("TOP")
-  body:SetWordWrap(true)
-  body:SetDrawLayer("OVERLAY", 2)
-  panel.body = body
-  local overwrite = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-  overwrite:SetSize(100, 22)
-  overwrite:SetFrameLevel(12)
-  overwrite:EnableMouse(true)
-  overwrite:SetPoint("BOTTOMLEFT", panel, "BOTTOM", -110, 16)
-  overwrite:SetText("Overwrite")
-  overwrite:SetScript("OnClick", function()
-    local pending = Mason.bindOverwritePending
-    panel:Hide()
-    Mason.bindOverwritePending = nil
-    if pending then
-      Mason:SetPieceKey(pending.id, pending.key, true)
-    end
-  end)
-  local cancel = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-  cancel:SetSize(100, 22)
-  cancel:SetFrameLevel(12)
-  cancel:EnableMouse(true)
-  cancel:SetPoint("BOTTOMRIGHT", panel, "BOTTOM", 110, 16)
-  cancel:SetText("Cancel")
-  cancel:SetScript("OnClick", function()
-    Mason.bindOverwritePending = nil
-    panel:Hide()
-  end)
-  panel.overwriteBtn = overwrite
-  panel.cancelBtn = cancel
-  self.bindOverwrite = panel
-  return panel
-end
-
-function Mason:ShowBindOverwriteDialog(id, key, other)
-  local piece = self:FindPiece(id)
-  if not piece or not other or not key then
-    return
-  end
-  local panel = self:EnsureBindOverwriteDialog()
-  if not panel then
-    return
-  end
-  self.bindOverwritePending = { id = id, key = key }
-  panel.body:SetText(string.format(
-    "%s is bound to %s. Bind it to %s instead?",
-    key,
-    self:PieceLabel(other),
-    self:PieceLabel(piece)
-  ))
-  panel:SetFrameStrata("TOOLTIP")
-  panel:SetFrameLevel(1)
-  panel:EnableMouse(false)
-  panel:Show()
-  panel:Raise()
-  if panel.overwriteBtn then
-    panel.overwriteBtn:SetFrameLevel(12)
-    panel.overwriteBtn:EnableMouse(true)
-  end
-  if panel.cancelBtn then
-    panel.cancelBtn:SetFrameLevel(12)
-    panel.cancelBtn:EnableMouse(true)
-  end
 end
 
 local function ChordLabel(key)

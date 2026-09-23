@@ -1134,34 +1134,21 @@ function Mason:NudgeSelectionToGrid(dirx, diry)
 end
 
 function Mason:HandleEscapeKey()
-  if self.bindMode then
-    return false
+  if self.HandleEditChromeKey then
+    return self:HandleEditChromeKey("ESCAPE")
   end
-  if self.optionsPanel and self.optionsPanel.IsShown and self.optionsPanel:IsShown() then
-    self.optionsPanel:Hide()
-    return true
-  end
-  if not self:InEditMode() then
-    return false
-  end
-  local had = false
-  for _ in pairs(self.selectedIds or {}) do
-    had = true
-    break
-  end
-  if had then
-    if self.ClearSelection then
-      self:ClearSelection()
-    end
-  elseif self.SetLocked then
-    self:SetLocked(true)
-  end
-  return true
+  return false
 end
 
 function Mason:HandleNudgeKey(key)
-  if key == "ESCAPE" then
-    return self:HandleEscapeKey()
+  if key == "ESCAPE" or key == "ENTER" then
+    if self.HandleEditChromeKey then
+      return self:HandleEditChromeKey(key)
+    end
+    if key == "ESCAPE" then
+      return self:HandleEscapeKey()
+    end
+    return false
   end
   if self.bindMode then
     return false
