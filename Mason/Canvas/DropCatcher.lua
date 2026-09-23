@@ -205,6 +205,12 @@ function Mason:PlaceCursorAction(action, x, y)
     print("Mason: could not create piece")
     return false
   end
+  if action.type == "spell" and piece.spellID then
+    local assistedId = self.GetAssistedActionSpellID and self:GetAssistedActionSpellID()
+    if assistedId and tonumber(piece.spellID) == assistedId then
+      piece.assistedCombat = true
+    end
+  end
   if self.SnapToGrid then
     local view = self:GetViews()[piece.id]
     local size = (self.GetViewSize and self:GetViewSize(view)) or 45

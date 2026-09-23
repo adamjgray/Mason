@@ -113,6 +113,22 @@ function Mason:RegisterRuntimeEvents()
       if self.ScheduleSpellbookHotkeys then
         self:ScheduleSpellbookHotkeys()
       end
+      if self.StampAssistedCombatPieces then
+        self:StampAssistedCombatPieces()
+      end
+      if self.OnAssistedSpellSignal then
+        self:OnAssistedSpellSignal()
+      end
+      if self.RefreshAssistedHighlights then
+        C_Timer.After(0, function()
+          if Mason.StampAssistedCombatPieces then
+            Mason:StampAssistedCombatPieces()
+          end
+          if Mason.RefreshAssistedHighlights then
+            Mason:RefreshAssistedHighlights()
+          end
+        end)
+      end
     elseif event == "ADDON_LOADED" then
       local addonName = ...
       if addonName == "Blizzard_PlayerSpells" or addonName == "Blizzard_Collections" or addonName == "Blizzard_MacroUI" then
@@ -137,6 +153,12 @@ function Mason:RegisterRuntimeEvents()
       if self.SyncChoiceNodeSpells then
         self:SyncChoiceNodeSpells()
       end
+      if self.StampAssistedCombatPieces then
+        self:StampAssistedCombatPieces()
+      end
+      if self.OnAssistedSpellSignal then
+        self:OnAssistedSpellSignal()
+      end
       if self.ScheduleSpellbookHotkeys then
         self:ScheduleSpellbookHotkeys()
       end
@@ -148,12 +170,18 @@ function Mason:RegisterRuntimeEvents()
       if self.PaintRules then
         self:PaintRules()
       end
+      if self.RefreshAssistedHighlights then
+        self:RefreshAssistedHighlights()
+      end
     elseif event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_ENTERING_COMBAT" then
       if self.SuspendUiForCombat then
         self:SuspendUiForCombat()
       end
       if self.PaintRules then
         self:PaintRules()
+      end
+      if self.RefreshAssistedHighlights then
+        self:RefreshAssistedHighlights()
       end
     elseif event == "PLAYER_TARGET_CHANGED" then
       if self.PaintRules then
