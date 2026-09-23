@@ -247,6 +247,7 @@ function Mason:ResolvePieceToken(token, specID)
 end
 
 -- Shared talent/override matcher for pickup reuse, faces, and assisted highlight.
+-- Union related IDs from every Retail API (do not elseif — APIs disagree per spell).
 function Mason:SpellIDsMatch(a, b)
   if not a or not b then
     return false
@@ -266,43 +267,26 @@ function Mason:SpellIDsMatch(a, b)
         ids[v] = true
       end
     end
-    if C_Spell and C_Spell.GetOverrideSpell then
-      local ok, v = pcall(C_Spell.GetOverrideSpell, id)
-      if ok then
-        add(v)
+    local function try(fn, ...)
+      if not fn then
+        return
       end
-    elseif FindSpellOverrideBySpellID then
-      local ok, v = pcall(FindSpellOverrideBySpellID, id)
-      if ok then
-        add(v)
-      end
-    elseif GetOverrideSpell then
-      local ok, v = pcall(GetOverrideSpell, id)
+      local ok, v = pcall(fn, ...)
       if ok then
         add(v)
       end
     end
-    if C_Spell and C_Spell.GetBaseSpell then
-      local ok, v = pcall(C_Spell.GetBaseSpell, id)
-      if ok then
-        add(v)
-      end
-    elseif C_SpellBook and C_SpellBook.FindBaseSpellByID then
-      local ok, v = pcall(C_SpellBook.FindBaseSpellByID, id)
-      if ok then
-        add(v)
-      end
-    elseif FindBaseSpellByID then
-      local ok, v = pcall(FindBaseSpellByID, id)
-      if ok then
-        add(v)
-      end
-    elseif FindBaseSpellBySpellID then
-      local ok, v = pcall(FindBaseSpellBySpellID, id)
-      if ok then
-        add(v)
-      end
+    if C_Spell then
+      try(C_Spell.GetOverrideSpell, id)
+      try(C_Spell.GetBaseSpell, id)
     end
+    try(FindSpellOverrideBySpellID, id)
+    try(GetOverrideSpell, id)
+    if C_SpellBook then
+      try(C_SpellBook.FindBaseSpellByID, id)
+    end
+    try(FindBaseSpellByID, id)
+    try(FindBaseSpellBySpellID, id)
     return ids
   end
   local left, right = related(a), related(b)

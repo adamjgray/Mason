@@ -133,7 +133,10 @@ function Mason:RegisterRuntimeEvents()
           end
         end
       end
-    elseif event == "SPELLS_CHANGED" then
+    elseif event == "SPELLS_CHANGED" or event == "TRAIT_CONFIG_UPDATED" then
+      if self.SyncChoiceNodeSpells then
+        self:SyncChoiceNodeSpells()
+      end
       if self.ScheduleSpellbookHotkeys then
         self:ScheduleSpellbookHotkeys()
       end
@@ -219,6 +222,7 @@ function Mason:RegisterRuntimeEvents()
   frame:RegisterEvent("PLAYER_ENTERING_WORLD")
   frame:RegisterEvent("ADDON_LOADED")
   frame:RegisterEvent("SPELLS_CHANGED")
+  pcall(frame.RegisterEvent, frame, "TRAIT_CONFIG_UPDATED")
   frame:RegisterEvent("PLAYER_TARGET_CHANGED")
   frame:RegisterEvent("PLAYER_REGEN_ENABLED")
   frame:RegisterEvent("PLAYER_REGEN_DISABLED")

@@ -382,10 +382,147 @@ function Mason:RefreshItemCounts()
 end
 
 
+function Mason:SpellIDFromTraitEntry(configID, entryID)
+  if not configID or not entryID or not C_Traits then
+    return nil
+  end
+  if not C_Traits.GetEntryInfo or not C_Traits.GetDefinitionInfo then
+    return nil
+  end
+  local entryInfo = C_Traits.GetEntryInfo(configID, entryID)
+  local defID = entryInfo and entryInfo.definitionID
+  if not defID then
+    return nil
+  end
+  local def = C_Traits.GetDefinitionInfo(defID)
+  return def and tonumber(def.spellID) or nil
+end
+
+-- Active spell on a Selection/choice talent node that contains spellID (sibling swap).
+function Mason:ActiveSpellOnSharedChoiceNode(spellID)
+  spellID = tonumber(spellID)
+  if not spellID or not C_Traits or not C_ClassTalents then
+    return nil
+  end
+  if not C_ClassTalents.GetActiveConfigID or not C_Traits.GetConfigInfo
+    or not C_Traits.GetTreeNodes or not C_Traits.GetNodeInfo then
+    return nil
+  end
+  local configID = C_ClassTalents.GetActiveConfigID()
+  if not configID then
+    return nil
+  end
+  local configInfo = C_Traits.GetConfigInfo(configID)
+  if not configInfo or not configInfo.treeIDs then
+    return nil
+  end
+  local selectionType = Enum and Enum.TraitNodeType and Enum.TraitNodeType.Selection
+  local subTreeType = Enum and Enum.TraitNodeType and Enum.TraitNodeType.SubTreeSelection
+  for _, treeID in ipairs(configInfo.treeIDs) do
+    local nodes = C_Traits.GetTreeNodes(treeID)
+    if nodes then
+      for _, nodeID in ipairs(nodes) do
+        local node = C_Traits.GetNodeInfo(configID, nodeID)
+        -- Choice nodes expose 2+ entryIDs; skip single-entry traits.
+        if node and node.entryIDs and #node.entryIDs >= 2 then
+          local ntype = node.type
+          if not ntype
+            or not selectionType
+            or ntype == selectionType
+            or (subTreeType and ntype == subTreeType) then
+            local contains = false
+            for _, entryID in ipairs(node.entryIDs) do
+              local sid = self:SpellIDFromTraitEntry(configID, entryID)
+              if sid and sid == spellID then
+                contains = true
+                break
+              end
+            end
+            if contains then
+              local activeEntryID = node.activeEntry and node.activeEntry.entryID
+              if not activeEntryID and node.entryIDsWithCommittedRanks then
+                activeEntryID = node.entryIDsWithCommittedRanks[1]
+              end
+              if activeEntryID then
+                local activeSpell = self:SpellIDFromTraitEntry(configID, activeEntryID)
+                if activeSpell and activeSpell > 0 then
+                  return activeSpell
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  return nil
+end
+
+-- Preferences: choice-node pieces follow the active talent (like default bars).
+-- Mutates kit spellID only for Selection-node siblings — not every GetOverrideSpell
+-- (avoids stance/temp override thrash into SavedVariables).
+function Mason:SyncChoiceNodeSpells()
+  if InCombatLockdown() then
+    return self:QueueIfCombat(function()
+      Mason:SyncChoiceNodeSpells()
+    end)
+  end
+  local kit = self.GetKit and self:GetKit()
+  if not kit then
+    return
+  end
+  local changed = false
+  for _, piece in pairs(kit) do
+    if (piece.type or "spell") == "spell" and piece.spellID then
+      local cur = tonumber(piece.spellID)
+      local active = self:ActiveSpellOnSharedChoiceNode(cur)
+      active = tonumber(active)
+      local kitChanged = active and cur and active ~= cur
+      if kitChanged then
+        piece.spellID = active
+        if C_Spell and C_Spell.GetSpellName then
+          piece.spellName = C_Spell.GetSpellName(active) or piece.spellName
+        elseif GetSpellInfo then
+          piece.spellName = GetSpellInfo(active) or piece.spellName
+        end
+        changed = true
+      end
+      local exec = self.executors and self.executors[piece.id]
+      if exec then
+        local labId = self.ResolveSpellCastIdentity and select(1, self:ResolveSpellCastIdentity(piece))
+        labId = tonumber(labId) or tonumber(piece.spellID)
+        if kitChanged or exec.masonLastLabId ~= labId then
+          if exec.__LAB_Version then
+            self:ConfigureFace(exec, piece)
+          else
+            self:ConfigureExecutor(exec, piece)
+          end
+          if self.UpdateFace and exec.__LAB_Version then
+            self:UpdateFace(exec, piece)
+          elseif self.PaintView then
+            self:PaintView(exec, piece)
+          end
+          exec.masonLastLabId = labId
+          changed = true
+        end
+      end
+    end
+  end
+  if changed then
+    if self.OnAssistedSpellSignal then
+      self:OnAssistedSpellSignal()
+    end
+    if self.RepaintSourceHotkeys then
+      self:RepaintSourceHotkeys()
+    end
+  end
+end
+
 -- Talent / replacement spells (e.g. Greater Invisibility): CastSpellByID no-ops
 -- while CastSpellByName works. LAB Spell handlers need a numeric _state_action
 -- (FindSpellBookSlotBySpellID). Split: LAB SetState keeps override ID; secure
--- "spell" attribute gets the localized name for cast. Kit identity stays piece.spellID.
+-- "spell" attribute gets the localized name for cast. Kit identity stays piece.spellID
+-- except SyncChoiceNodeSpells (choice-node active entry).
 function Mason:ResolveSpellCastIdentity(piece)
   if not piece then
     return nil, nil
@@ -433,6 +570,8 @@ function Mason:NormalizeAssistedSpellID(id)
   return id
 end
 
+-- Exact ID only: SpellIDsMatch here skipped assisted refreshes when the next-cast
+-- recommendation moved between related/talent IDs (C-08 smoke FAIL 2).
 function Mason:AssistedSpellUnchanged(a, b)
   a = self:NormalizeAssistedSpellID(a)
   b = self:NormalizeAssistedSpellID(b)
@@ -442,7 +581,7 @@ function Mason:AssistedSpellUnchanged(a, b)
   if not a or not b then
     return false
   end
-  return a == b or self:SpellIDsMatch(a, b)
+  return a == b
 end
 
 function Mason:OnAssistedSpellSignal()
@@ -707,6 +846,7 @@ function Mason:ConfigureFace(exec, piece)
     local labId, castName = self:ResolveSpellCastIdentity(piece)
     exec:SetState("0", "spell", labId or piece.spellID or piece.spellName)
     exec.masonSpellCastName = castName
+    exec.masonLastLabId = tonumber(labId) or tonumber(piece.spellID)
   elseif ptype == "item" or ptype == "toy" then
     exec:SetState("0", "item", piece.itemID)
     exec.masonSpellCastName = nil
