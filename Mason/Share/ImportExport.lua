@@ -301,6 +301,11 @@ function Mason:ApplyImportData(data)
         end
       end
       self:ApplyOverrides()
+      -- C-06: kit-only import membership must layout explicitly (ApplyOverrides is bind-only).
+      -- kind == "full" still layouts via the views branch below.
+      if kind == "kit" and self.ApplyLayout then
+        self:ApplyLayout()
+      end
     end
     if kind == "layout" or kind == "full" then
       local pieces = self:GetKit()
