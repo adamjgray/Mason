@@ -57,14 +57,6 @@ function Mason:GetLABHeader()
   return header
 end
 
-local function HonorClicks(exec)
-  if GetCVarBool("ActionButtonUseKeyDown") then
-    exec:RegisterForClicks("AnyDown", "AnyUp")
-  else
-    exec:RegisterForClicks("AnyUp")
-  end
-end
-
 function Mason:GetFaceNativeSize()
   local ab = _G.ActionButton1
   local w = ab and ab.GetWidth and ab:GetWidth()
@@ -390,56 +382,147 @@ function Mason:RefreshItemCounts()
 end
 
 
-function Mason:SpellIDsMatch(a, b)
-  if not a or not b then
-    return false
+function Mason:SpellIDFromTraitEntry(configID, entryID)
+  if not configID or not entryID or not C_Traits then
+    return nil
   end
-  a, b = tonumber(a), tonumber(b)
-  if not a or not b then
-    return false
+  if not C_Traits.GetEntryInfo or not C_Traits.GetDefinitionInfo then
+    return nil
   end
-  if a == b then
-    return true
+  local entryInfo = C_Traits.GetEntryInfo(configID, entryID)
+  local defID = entryInfo and entryInfo.definitionID
+  if not defID then
+    return nil
   end
-  local function related(id)
-    local ids = { [id] = true }
-    if C_Spell and C_Spell.GetOverrideSpell then
-      local ov = C_Spell.GetOverrideSpell(id)
-      if ov then
-        ids[ov] = true
-      end
-    elseif GetOverrideSpell then
-      local ov = GetOverrideSpell(id)
-      if ov then
-        ids[ov] = true
+  local def = C_Traits.GetDefinitionInfo(defID)
+  return def and tonumber(def.spellID) or nil
+end
+
+-- Active spell on a Selection/choice talent node that contains spellID (sibling swap).
+function Mason:ActiveSpellOnSharedChoiceNode(spellID)
+  spellID = tonumber(spellID)
+  if not spellID or not C_Traits or not C_ClassTalents then
+    return nil
+  end
+  if not C_ClassTalents.GetActiveConfigID or not C_Traits.GetConfigInfo
+    or not C_Traits.GetTreeNodes or not C_Traits.GetNodeInfo then
+    return nil
+  end
+  local configID = C_ClassTalents.GetActiveConfigID()
+  if not configID then
+    return nil
+  end
+  local configInfo = C_Traits.GetConfigInfo(configID)
+  if not configInfo or not configInfo.treeIDs then
+    return nil
+  end
+  local selectionType = Enum and Enum.TraitNodeType and Enum.TraitNodeType.Selection
+  local subTreeType = Enum and Enum.TraitNodeType and Enum.TraitNodeType.SubTreeSelection
+  for _, treeID in ipairs(configInfo.treeIDs) do
+    local nodes = C_Traits.GetTreeNodes(treeID)
+    if nodes then
+      for _, nodeID in ipairs(nodes) do
+        local node = C_Traits.GetNodeInfo(configID, nodeID)
+        -- Choice nodes expose 2+ entryIDs; skip single-entry traits.
+        if node and node.entryIDs and #node.entryIDs >= 2 then
+          local ntype = node.type
+          if not ntype
+            or not selectionType
+            or ntype == selectionType
+            or (subTreeType and ntype == subTreeType) then
+            local contains = false
+            for _, entryID in ipairs(node.entryIDs) do
+              local sid = self:SpellIDFromTraitEntry(configID, entryID)
+              if sid and sid == spellID then
+                contains = true
+                break
+              end
+            end
+            if contains then
+              local activeEntryID = node.activeEntry and node.activeEntry.entryID
+              if not activeEntryID and node.entryIDsWithCommittedRanks then
+                activeEntryID = node.entryIDsWithCommittedRanks[1]
+              end
+              if activeEntryID then
+                local activeSpell = self:SpellIDFromTraitEntry(configID, activeEntryID)
+                if activeSpell and activeSpell > 0 then
+                  return activeSpell
+                end
+              end
+            end
+          end
+        end
       end
     end
-    if C_SpellBook and C_SpellBook.FindBaseSpellByID then
-      local base = C_SpellBook.FindBaseSpellByID(id)
-      if base then
-        ids[base] = true
+  end
+  return nil
+end
+
+-- Preferences: choice-node pieces follow the active talent (like default bars).
+-- Mutates kit spellID only for Selection-node siblings — not every GetOverrideSpell
+-- (avoids stance/temp override thrash into SavedVariables).
+function Mason:SyncChoiceNodeSpells()
+  if InCombatLockdown() then
+    return self:QueueIfCombat(function()
+      Mason:SyncChoiceNodeSpells()
+    end)
+  end
+  local kit = self.GetKit and self:GetKit()
+  if not kit then
+    return
+  end
+  local changed = false
+  for _, piece in pairs(kit) do
+    if (piece.type or "spell") == "spell" and piece.spellID then
+      local cur = tonumber(piece.spellID)
+      local active = self:ActiveSpellOnSharedChoiceNode(cur)
+      active = tonumber(active)
+      local kitChanged = active and cur and active ~= cur
+      if kitChanged then
+        piece.spellID = active
+        if C_Spell and C_Spell.GetSpellName then
+          piece.spellName = C_Spell.GetSpellName(active) or piece.spellName
+        elseif GetSpellInfo then
+          piece.spellName = GetSpellInfo(active) or piece.spellName
+        end
+        changed = true
       end
-    elseif FindBaseSpellByID then
-      local base = FindBaseSpellByID(id)
-      if base then
-        ids[base] = true
+      local exec = self.executors and self.executors[piece.id]
+      if exec then
+        local labId = self.ResolveSpellCastIdentity and select(1, self:ResolveSpellCastIdentity(piece))
+        labId = tonumber(labId) or tonumber(piece.spellID)
+        if kitChanged or exec.masonLastLabId ~= labId then
+          if exec.__LAB_Version then
+            self:ConfigureFace(exec, piece)
+          else
+            self:ConfigureExecutor(exec, piece)
+          end
+          if self.UpdateFace and exec.__LAB_Version then
+            self:UpdateFace(exec, piece)
+          elseif self.PaintView then
+            self:PaintView(exec, piece)
+          end
+          exec.masonLastLabId = labId
+          changed = true
+        end
       end
     end
-    return ids
   end
-  local left, right = related(a), related(b)
-  for id in pairs(left) do
-    if right[id] then
-      return true
+  if changed then
+    if self.OnAssistedSpellSignal then
+      self:OnAssistedSpellSignal()
+    end
+    if self.RepaintSourceHotkeys then
+      self:RepaintSourceHotkeys()
     end
   end
-  return false
 end
 
 -- Talent / replacement spells (e.g. Greater Invisibility): CastSpellByID no-ops
 -- while CastSpellByName works. LAB Spell handlers need a numeric _state_action
 -- (FindSpellBookSlotBySpellID). Split: LAB SetState keeps override ID; secure
--- "spell" attribute gets the localized name for cast. Kit identity stays piece.spellID.
+-- "spell" attribute gets the localized name for cast. Kit identity stays piece.spellID
+-- except SyncChoiceNodeSpells (choice-node active entry).
 function Mason:ResolveSpellCastIdentity(piece)
   if not piece then
     return nil, nil
@@ -487,6 +570,8 @@ function Mason:NormalizeAssistedSpellID(id)
   return id
 end
 
+-- Exact ID only: SpellIDsMatch here skipped assisted refreshes when the next-cast
+-- recommendation moved between related/talent IDs (C-08 smoke FAIL 2).
 function Mason:AssistedSpellUnchanged(a, b)
   a = self:NormalizeAssistedSpellID(a)
   b = self:NormalizeAssistedSpellID(b)
@@ -496,7 +581,7 @@ function Mason:AssistedSpellUnchanged(a, b)
   if not a or not b then
     return false
   end
-  return a == b or self:SpellIDsMatch(a, b)
+  return a == b
 end
 
 function Mason:OnAssistedSpellSignal()
@@ -527,41 +612,358 @@ function Mason:SyncAssistedSpell()
   local unchanged = self:AssistedSpellUnchanged(rec, self.assistedLastSpell)
   self.assistedLastSpell = rec
   if unchanged and not self:AssistedOverlayNeedsShow() then
+    -- Next-cast ID stable, but LAB UpdateAction may have restored the generic
+    -- assisted-action icon — repaint recommended texture on the rotation button.
+    for _, exec in pairs(self.executors or {}) do
+      if exec.__LAB_Version then
+        self:UpdateAssistedCombatButtonIcon(exec)
+        self:UpdateAssistedCombatRotationOverlay(exec)
+      end
+    end
     return
   end
   self:RefreshAssistedHighlights()
 end
 
-function Mason:GetAssistedSpellID()
-  if AssistedCombatManager then
-    if AssistedCombatManager.lastNextCastSpellID and AssistedCombatManager.lastNextCastSpellID ~= 0 then
-      return AssistedCombatManager.lastNextCastSpellID
+function Mason:IsAssistedHighlightRingEnabled()
+  if not self.db or not self.db.profile then
+    return true
+  end
+  if self.db.profile.assistedHighlightRing == nil then
+    return true
+  end
+  return not not self.db.profile.assistedHighlightRing
+end
+
+function Mason:SetAssistedHighlightRingEnabled(enabled)
+  if not self.db or not self.db.profile then
+    return
+  end
+  self.db.profile.assistedHighlightRing = not not enabled
+  if self.RefreshAssistedHighlights then
+    self:RefreshAssistedHighlights()
+  end
+end
+
+function Mason:IsAssistedRotationArrowEnabled()
+  if not self.db or not self.db.profile then
+    return true
+  end
+  if self.db.profile.assistedRotationArrow == nil then
+    return true
+  end
+  return not not self.db.profile.assistedRotationArrow
+end
+
+function Mason:SetAssistedRotationArrowEnabled(enabled)
+  if not self.db or not self.db.profile then
+    return
+  end
+  self.db.profile.assistedRotationArrow = not not enabled
+  if self.RefreshAssistedHighlights then
+    self:RefreshAssistedHighlights()
+  end
+end
+
+-- Live next-cast, sticky last recommend, or first rotation spell — never the
+-- generic assisted-action spell (including when the recommend is on cooldown).
+function Mason:GetAssistedRecommendedSpellID(piece)
+  local actionId = self:GetAssistedActionSpellID()
+  local function live(id)
+    id = tonumber(id)
+    if not id or id == 0 then
+      return nil
     end
-    if AssistedCombatManager.GetActionSpellID then
-      local id = AssistedCombatManager:GetActionSpellID()
-      if id and id ~= 0 then
-        return id
+    -- API sometimes returns the action spell itself before a real recommendation.
+    if actionId and id == actionId then
+      return nil
+    end
+    return id
+  end
+  if AssistedCombatManager and AssistedCombatManager.lastNextCastSpellID then
+    local id = live(AssistedCombatManager.lastNextCastSpellID)
+    if id then
+      return id
+    end
+  end
+  if C_AssistedCombat and C_AssistedCombat.GetNextCastSpell then
+    local id = live(C_AssistedCombat.GetNextCastSpell(false))
+    if id then
+      return id
+    end
+    id = live(C_AssistedCombat.GetNextCastSpell(true))
+    if id then
+      return id
+    end
+  end
+  if C_AssistedCombat and C_AssistedCombat.GetRotationSpells then
+    local ok, spells = pcall(C_AssistedCombat.GetRotationSpells)
+    if ok and type(spells) == "table" then
+      for i = 1, #spells do
+        local id = live(spells[i])
+        if id then
+          return id
+        end
       end
     end
   end
-  if C_AssistedCombat then
-    if C_AssistedCombat.GetNextCastSpell then
-      local id = C_AssistedCombat.GetNextCastSpell(false)
-      if id and id ~= 0 then
-        return id
-      end
+  -- Sticky through CD / OOC gaps when the API briefly returns nil or action spell.
+  if piece and piece.assistedLastSpellID then
+    local sticky = tonumber(piece.assistedLastSpellID)
+    if sticky and sticky ~= 0 and sticky ~= actionId then
+      return sticky
     end
-    if C_AssistedCombat.GetActionSpell then
-      local id = C_AssistedCombat.GetActionSpell()
-      if id and id ~= 0 then
-        return id
+  end
+  return nil
+end
+
+function Mason:GetAssistedNextCastSpellID()
+  return self:GetAssistedRecommendedSpellID()
+end
+
+function Mason:GetAssistedActionSpellID()
+  if AssistedCombatManager and AssistedCombatManager.GetActionSpellID then
+    local id = AssistedCombatManager:GetActionSpellID()
+    if id and id ~= 0 then
+      return tonumber(id)
+    end
+  end
+  if C_AssistedCombat and C_AssistedCombat.GetActionSpell then
+    local id = C_AssistedCombat.GetActionSpell()
+    if id and id ~= 0 then
+      return tonumber(id)
+    end
+  end
+  return nil
+end
+
+function Mason:GetAssistedSpellID()
+  return self:GetAssistedRecommendedSpellID() or self:GetAssistedActionSpellID()
+end
+
+-- Copy displayed texture from a Blizzard assisted-combat action slot (OOC-safe).
+function Mason:GetAssistedCombatSlotTexture()
+  if not (C_ActionBar and C_ActionBar.IsAssistedCombatAction and GetActionTexture) then
+    return nil
+  end
+  local actionId = self:GetAssistedActionSpellID()
+  local generic
+  if actionId and C_Spell and C_Spell.GetSpellTexture then
+    generic = C_Spell.GetSpellTexture(actionId)
+  end
+  for slot = 1, 180 do
+    local ok, assisted = pcall(C_ActionBar.IsAssistedCombatAction, slot)
+    if ok and assisted then
+      if C_ActionBar.ForceUpdateAction then
+        pcall(C_ActionBar.ForceUpdateAction, slot, true)
+      end
+      local tex = GetActionTexture(slot)
+      if tex and tex ~= 0 and tex ~= generic then
+        return tex
       end
     end
   end
   return nil
 end
 
+-- Single-button assistant: sticky kit flag + action-spell ID match.
+function Mason:IsAssistedCombatPiece(piece)
+  if not piece or (piece.type or "spell") ~= "spell" then
+    return false
+  end
+  if piece.assistedCombat then
+    return true
+  end
+  local actionId = self:GetAssistedActionSpellID()
+  local sid = tonumber(piece.spellID)
+  if actionId and sid and sid == actionId then
+    piece.assistedCombat = true
+    return true
+  end
+  return false
+end
+
+function Mason:StampAssistedCombatPieces()
+  local actionId = self:GetAssistedActionSpellID()
+  if not actionId then
+    return
+  end
+  for _, piece in pairs(self:GetKit() or {}) do
+    if (piece.type or "spell") == "spell" and tonumber(piece.spellID) == actionId then
+      piece.assistedCombat = true
+    end
+  end
+end
+
+function Mason:ScheduleAssistedCombatIconRetry(exec)
+  if not exec or exec.masonAssistedIconRetry then
+    return
+  end
+  exec.masonAssistedIconRetry = true
+  if AssistedCombatManager and AssistedCombatManager.ForceUpdateAtEndOfFrame then
+    pcall(function()
+      AssistedCombatManager:ForceUpdateAtEndOfFrame()
+    end)
+  end
+  local delays = { 0, 0, 0.05, 0.15, 0.35, 1.0, 2.0 }
+  for i = 1, #delays do
+    local last = i == #delays
+    C_Timer.After(delays[i], function()
+      if last then
+        exec.masonAssistedIconRetry = nil
+      end
+      if exec and exec.masonPieceId and Mason.UpdateAssistedCombatButtonIcon then
+        Mason:UpdateAssistedCombatButtonIcon(exec)
+      end
+    end)
+  end
+end
+
+-- Always re-apply recommended texture (LAB UpdateAction restores the generic glyph
+-- on cooldown / state updates). Sticky last recommend across CD / OOC gaps.
+function Mason:UpdateAssistedCombatButtonIcon(exec)
+  if not exec or not exec.icon then
+    return
+  end
+  local piece = exec.masonPieceId and self:FindPiece(exec.masonPieceId)
+  if not self:IsAssistedCombatPiece(piece) then
+    return
+  end
+  local texId = self:GetAssistedRecommendedSpellID(piece)
+  if texId then
+    if piece then
+      piece.assistedLastSpellID = texId
+    end
+    exec.masonAssistedLastRecommend = texId
+  else
+    texId = exec.masonAssistedLastRecommend
+      or (piece and tonumber(piece.assistedLastSpellID))
+      or nil
+  end
+  if texId then
+    local tex
+    if C_Spell and C_Spell.GetSpellTexture then
+      tex = C_Spell.GetSpellTexture(texId)
+    elseif GetSpellTexture then
+      tex = GetSpellTexture(texId)
+    end
+    if tex then
+      -- Do not early-return on same spell ID: LAB may have wiped the texture.
+      exec.icon:SetTexture(tex)
+      exec.masonAssistedIconSpell = texId
+      return
+    end
+  end
+  local slotTex = self:GetAssistedCombatSlotTexture()
+  if slotTex then
+    exec.icon:SetTexture(slotTex)
+    exec.masonAssistedIconSpell = slotTex
+    return
+  end
+  if not exec.masonAssistedIconSpell then
+    exec.icon:SetTexture(0)
+  end
+  self:ScheduleAssistedCombatIconRetry(exec)
+end
+
+-- Gold clockwise arrow (UI-HUD-RotationHelper-*) around the single-button assistant.
+-- Exactly one Inactive (OOC) or Active (combat) layer — never both (double arrow).
+function Mason:EnsureAssistedCombatRotationOverlay(exec)
+  if not exec then
+    return nil
+  end
+  if exec.masonAssistedRotationFrame then
+    exec.AssistedCombatRotationFrame = exec.masonAssistedRotationFrame
+    return exec.masonAssistedRotationFrame
+  end
+  -- Drop stray duplicates parented to this face (prior double-create).
+  if exec.GetChildren then
+    local children = { exec:GetChildren() }
+    for i = 1, #children do
+      local child = children[i]
+      if child and child.InactiveTexture and child.ActiveFrame then
+        child:Hide()
+        child:SetParent(nil)
+      end
+    end
+  end
+  local ok, frame = pcall(CreateFrame, "Frame", nil, exec, "ActionBarButtonAssistedCombatRotationTemplate")
+  if not ok or not frame then
+    return nil
+  end
+  exec.masonAssistedRotationFrame = frame
+  exec.AssistedCombatRotationFrame = frame
+  local w = exec.GetWidth and exec:GetWidth() or 0
+  local h = exec.GetHeight and exec:GetHeight() or 0
+  if not w or w <= 0 then
+    w = 45
+  end
+  if not h or h <= 0 then
+    h = 45
+  end
+  frame:SetSize(w * 1.4, h * 1.4)
+  frame:ClearAllPoints()
+  frame:SetPoint("CENTER", exec, "CENTER", -2, 1)
+  frame:SetFrameLevel((exec.GetFrameLevel and exec:GetFrameLevel() or 0) + 8)
+  -- Mixin OnUpdate ForceUpdateAction's parent.action — Mason faces have none.
+  frame:SetScript("OnUpdate", nil)
+  -- Start exclusive: inactive only (OOC default).
+  if frame.InactiveTexture then
+    frame.InactiveTexture:Show()
+  end
+  if frame.ActiveFrame then
+    frame.ActiveFrame:Hide()
+  end
+  return frame
+end
+
+function Mason:SyncAssistedCombatRotationLayers(frame)
+  if not frame then
+    return
+  end
+  local inCombat = UnitAffectingCombat and UnitAffectingCombat("player")
+  if frame.InactiveTexture then
+    frame.InactiveTexture:SetShown(not inCombat)
+  end
+  if frame.ActiveFrame then
+    frame.ActiveFrame:SetShown(not not inCombat)
+    if inCombat then
+      if frame.ActiveFrame.GlowAnim then
+        pcall(function()
+          frame.ActiveFrame.GlowAnim:Play()
+        end)
+      end
+    elseif frame.ActiveFrame.GlowAnim then
+      pcall(function()
+        frame.ActiveFrame.GlowAnim:Stop()
+      end)
+    end
+  end
+end
+
+function Mason:UpdateAssistedCombatRotationOverlay(exec)
+  if not exec then
+    return
+  end
+  local piece = exec.masonPieceId and self:FindPiece(exec.masonPieceId)
+  local show = self:IsAssistedRotationArrowEnabled() and self:IsAssistedCombatPiece(piece)
+  local frame = exec.masonAssistedRotationFrame or exec.AssistedCombatRotationFrame
+  if show then
+    frame = self:EnsureAssistedCombatRotationOverlay(exec)
+    if not frame then
+      return
+    end
+    frame:Show()
+    self:SyncAssistedCombatRotationLayers(frame)
+  elseif frame then
+    frame:Hide()
+  end
+end
+
 function Mason:AssistedShouldShow(exec)
+  if not self:IsAssistedHighlightRingEnabled() then
+    return false
+  end
   if not exec or not exec.masonPieceId then
     return false
   end
@@ -575,6 +977,10 @@ function Mason:AssistedShouldShow(exec)
     return false
   end
   local piece = self:FindPiece(exec.masonPieceId)
+  -- Rotation button shows next-cast icon; do not also paint the highlight overlay.
+  if self:IsAssistedCombatPiece(piece) then
+    return false
+  end
   local buttonSpell = exec.GetSpellId and exec:GetSpellId()
   return self:SpellIDsMatch(buttonSpell, rec)
     or (piece and self:SpellIDsMatch(piece.spellID, rec))
@@ -628,6 +1034,8 @@ function Mason:RefreshAssistedHighlights()
   for _, exec in pairs(self.executors or {}) do
     if exec.__LAB_Version then
       self:UpdateAssistedHighlight(exec)
+      self:UpdateAssistedCombatButtonIcon(exec)
+      self:UpdateAssistedCombatRotationOverlay(exec)
     end
   end
 end
@@ -696,6 +1104,8 @@ function Mason:RegisterFaceCallbacks()
         Mason:ShowFlyoutArrow(button, afterPiece)
       end
       Mason:UpdateAssistedHighlight(button)
+      Mason:UpdateAssistedCombatButtonIcon(button)
+      Mason:UpdateAssistedCombatRotationOverlay(button)
       if Mason.ApplyCenteredScale then
         Mason:ApplyCenteredScale(button.masonPieceId)
       elseif Mason.AnchorViewCenter then
@@ -761,6 +1171,7 @@ function Mason:ConfigureFace(exec, piece)
     local labId, castName = self:ResolveSpellCastIdentity(piece)
     exec:SetState("0", "spell", labId or piece.spellID or piece.spellName)
     exec.masonSpellCastName = castName
+    exec.masonLastLabId = tonumber(labId) or tonumber(piece.spellID)
   elseif ptype == "item" or ptype == "toy" then
     exec:SetState("0", "item", piece.itemID)
     exec.masonSpellCastName = nil
@@ -775,7 +1186,7 @@ function Mason:ConfigureFace(exec, piece)
   if exec.DisableDragNDrop then
     exec:DisableDragNDrop(true)
   end
-  HonorClicks(exec)
+  self:HonorExecutorClicks(exec)
   exec.GetHotkey = function()
     if not SHOW_HOTKEY then
       return nil
@@ -819,6 +1230,9 @@ function Mason:ConfigureFace(exec, piece)
   end
   self:StripSlotArt(exec)
   self:UpdateAssistedHighlight(exec)
+  exec.masonAssistedIconSpell = nil
+  self:UpdateAssistedCombatButtonIcon(exec)
+  self:UpdateAssistedCombatRotationOverlay(exec)
   if self.ShowFlyoutArrow then
     self:ShowFlyoutArrow(exec, piece)
   end
@@ -863,6 +1277,9 @@ function Mason:UpdateFace(exec, piece)
   self:SkinFace(exec)
   self:StripSlotArt(exec)
   self:UpdateAssistedHighlight(exec)
+  exec.masonAssistedIconSpell = nil
+  self:UpdateAssistedCombatButtonIcon(exec)
+  self:UpdateAssistedCombatRotationOverlay(exec)
   self:FitFace(exec)
   if self.ApplyCenteredScale then
     self:ApplyCenteredScale(exec.masonPieceId)
@@ -901,9 +1318,6 @@ function Mason:EnsureExecutor(piece)
         self:WireLockedPickup(exec)
       end
     end
-    if self.WireExecutorView then
-      self:WireExecutorView(exec)
-    end
     return exec
   end
   local LAB = self:GetLAB()
@@ -917,9 +1331,6 @@ function Mason:EnsureExecutor(piece)
     exec.masonPieceId = piece.id
     self.executors[piece.id] = exec
     self:ConfigureExecutor(exec, piece)
-    if self.WireExecutorView then
-      self:WireExecutorView(exec)
-    end
     if self.WireLockedPickup then
       self:WireLockedPickup(exec)
     end
@@ -938,9 +1349,6 @@ function Mason:EnsureExecutor(piece)
   self.executors[piece.id] = exec
   self:ConfigureFace(exec, piece)
   self:SkinFace(exec)
-  if self.WireExecutorView then
-    self:WireExecutorView(exec)
-  end
   return exec
 end
 

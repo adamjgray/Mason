@@ -966,9 +966,33 @@ function Mason:RegisterOptions()
               Mason.db.profile.debug = not not v
             end,
           },
+          assistedHighlightRing = {
+            type = "toggle",
+            name = "Assisted highlight ring",
+            desc = "Show the circular Assisted Combat highlight on the recommended ability (Blizzard-like).",
+            order = 3,
+            get = function()
+              return Mason:IsAssistedHighlightRingEnabled()
+            end,
+            set = function(_, v)
+              Mason:SetAssistedHighlightRingEnabled(v)
+            end,
+          },
+          assistedRotationArrow = {
+            type = "toggle",
+            name = "Assistant clockwise arrow",
+            desc = "Show the gold clockwise arrow overlay on the single-button assistant.",
+            order = 4,
+            get = function()
+              return Mason:IsAssistedRotationArrowEnabled()
+            end,
+            set = function(_, v)
+              Mason:SetAssistedRotationArrowEnabled(v)
+            end,
+          },
           notes = {
             type = "description",
-            order = 3,
+            order = 5,
             name = "Binds follow ActionButtonUseKeyDown.\nDefault bars are not hidden.\nMasque group name is Mason.",
           },
         },

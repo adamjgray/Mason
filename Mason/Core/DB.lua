@@ -10,6 +10,10 @@ local defaults = {
     gridSize = 32,
     defaultSize = nil,
     debug = false,
+    -- Assisted combat highlight ring on recommended faces (Blizzard-like). Default on.
+    assistedHighlightRing = true,
+    -- Clockwise gold arrow overlay on the single-button assistant. Default on.
+    assistedRotationArrow = true,
   },
   char = {
     locked = true,
@@ -246,64 +250,62 @@ function Mason:ResolvePieceToken(token, specID)
   return self:FindPieceByKey(token, specID) or self:FindPieceBySpellToken(token, specID)
 end
 
-local function SpellIdsMatch(a, b)
-  a = tonumber(a)
-  b = tonumber(b)
+-- Shared talent/override matcher for pickup reuse, faces, and assisted highlight.
+-- Union related IDs from every Retail API (do not elseif — APIs disagree per spell).
+function Mason:SpellIDsMatch(a, b)
+  if not a or not b then
+    return false
+  end
+  a, b = tonumber(a), tonumber(b)
   if not a or not b then
     return false
   end
   if a == b then
     return true
   end
-  local function overrideId(id)
-    if C_Spell and C_Spell.GetOverrideSpell then
-      local ok, v = pcall(C_Spell.GetOverrideSpell, id)
-      if ok then
-        v = tonumber(v)
-        if v and v > 0 then
-          return v
-        end
+  local function related(id)
+    local ids = { [id] = true }
+    local function add(v)
+      v = tonumber(v)
+      if v and v > 0 then
+        ids[v] = true
       end
     end
-    if FindSpellOverrideBySpellID then
-      local ok, v = pcall(FindSpellOverrideBySpellID, id)
+    local function try(fn, ...)
+      if not fn then
+        return
+      end
+      local ok, v = pcall(fn, ...)
       if ok then
-        v = tonumber(v)
-        if v and v > 0 then
-          return v
-        end
+        add(v)
       end
     end
-    return id
+    if C_Spell then
+      try(C_Spell.GetOverrideSpell, id)
+      try(C_Spell.GetBaseSpell, id)
+    end
+    try(FindSpellOverrideBySpellID, id)
+    try(GetOverrideSpell, id)
+    if C_SpellBook then
+      try(C_SpellBook.FindBaseSpellByID, id)
+    end
+    try(FindBaseSpellByID, id)
+    try(FindBaseSpellBySpellID, id)
+    return ids
   end
-  local function baseId(id)
-    if C_Spell and C_Spell.GetBaseSpell then
-      local ok, v = pcall(C_Spell.GetBaseSpell, id)
-      if ok then
-        v = tonumber(v)
-        if v and v > 0 then
-          return v
-        end
-      end
+  local left, right = related(a), related(b)
+  for id in pairs(left) do
+    if right[id] then
+      return true
     end
-    if FindBaseSpellBySpellID then
-      local ok, v = pcall(FindBaseSpellBySpellID, id)
-      if ok then
-        v = tonumber(v)
-        if v and v > 0 then
-          return v
-        end
-      end
-    end
-    return id
   end
-  return overrideId(a) == overrideId(b) or baseId(a) == baseId(b) or overrideId(a) == b or a == overrideId(b) or baseId(a) == b or a == baseId(b)
+  return false
 end
 
 function Mason:FindPieceByAction(ptype, fields)
   fields = fields or {}
   for _, piece in pairs(self:GetKit()) do
-    if ptype == "spell" and piece.type == "spell" and SpellIdsMatch(piece.spellID, fields.spellID) then
+    if ptype == "spell" and piece.type == "spell" and self:SpellIDsMatch(piece.spellID, fields.spellID) then
       return piece
     elseif (ptype == "item" or ptype == "toy") and (piece.type == "item" or piece.type == "toy")
       and tonumber(piece.itemID) and tonumber(fields.itemID)

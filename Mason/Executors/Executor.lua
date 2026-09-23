@@ -14,9 +14,14 @@ function Mason:CreateBindOwner()
   return owner
 end
 
-local function HonorKeyDownClicks(exec)
+-- One click policy for LAB faces and raw SecureActionButton fallback (C-11).
+-- Match LAB / Blizzard: key-down CVar → AnyDown+AnyUp; else AnyUp.
+function Mason:HonorExecutorClicks(exec)
+  if not exec then
+    return
+  end
   if GetCVarBool("ActionButtonUseKeyDown") then
-    exec:RegisterForClicks("AnyDown")
+    exec:RegisterForClicks("AnyDown", "AnyUp")
   else
     exec:RegisterForClicks("AnyUp")
   end
@@ -42,27 +47,7 @@ function Mason:ConfigureExecutor(exec, piece)
     exec:SetAttribute("spell", nil)
     exec:SetAttribute("LABUseCustomFlyout", false)
   end
-  HonorKeyDownClicks(exec)
-end
-
-function Mason:EnsureExecutor(piece)
-  local name = self:ExecutorName(piece.id)
-  local exec = self.executors[piece.id] or _G[name]
-  if not exec then
-    exec = CreateFrame("Button", name, UIParent, "SecureActionButtonTemplate")
-    exec:SetSize(1, 1)
-    exec:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -2000, -2000)
-    exec:EnableMouse(false)
-    exec:Hide()
-    exec:SetAlpha(0)
-  end
-  exec.masonPieceId = piece.id
-  self.executors[piece.id] = exec
-  self:ConfigureExecutor(exec, piece)
-  if self.WireExecutorView then
-    self:WireExecutorView(exec)
-  end
-  return exec
+  self:HonorExecutorClicks(exec)
 end
 
 function Mason:CrateExecutorVisual(id)
@@ -114,7 +99,7 @@ function Mason:RefreshExecutorClicks()
   for id in pairs(self:GetKit()) do
     local exec = self.executors[id] or _G[self:ExecutorName(id)]
     if exec then
-      HonorKeyDownClicks(exec)
+      self:HonorExecutorClicks(exec)
     end
   end
 end
