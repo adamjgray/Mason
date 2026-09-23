@@ -170,6 +170,9 @@ function Mason:PlaceView(id, x, y, snap)
     if self.UpdateAssistedCombatButtonIcon then
       self:UpdateAssistedCombatButtonIcon(exec)
     end
+    if self.UpdateAssistedCombatRotationOverlay then
+      self:UpdateAssistedCombatRotationOverlay(exec)
+    end
     if self.ApplyRule then
       self:ApplyRule(exec, piece)
     end

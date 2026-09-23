@@ -12,6 +12,8 @@ local defaults = {
     debug = false,
     -- Assisted combat highlight ring on recommended faces (Blizzard-like). Default on.
     assistedHighlightRing = true,
+    -- Clockwise gold arrow overlay on the single-button assistant. Default on.
+    assistedRotationArrow = true,
   },
   char = {
     locked = true,

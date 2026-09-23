@@ -978,9 +978,21 @@ function Mason:RegisterOptions()
               Mason:SetAssistedHighlightRingEnabled(v)
             end,
           },
+          assistedRotationArrow = {
+            type = "toggle",
+            name = "Assistant clockwise arrow",
+            desc = "Show the gold clockwise arrow overlay on the single-button assistant.",
+            order = 4,
+            get = function()
+              return Mason:IsAssistedRotationArrowEnabled()
+            end,
+            set = function(_, v)
+              Mason:SetAssistedRotationArrowEnabled(v)
+            end,
+          },
           notes = {
             type = "description",
-            order = 4,
+            order = 5,
             name = "Binds follow ActionButtonUseKeyDown.\nDefault bars are not hidden.\nMasque group name is Mason.",
           },
         },
