@@ -612,38 +612,91 @@ function Mason:SyncAssistedSpell()
   local unchanged = self:AssistedSpellUnchanged(rec, self.assistedLastSpell)
   self.assistedLastSpell = rec
   if unchanged and not self:AssistedOverlayNeedsShow() then
+    -- Next-cast ID stable, but LAB UpdateAction may have restored the generic
+    -- assisted-action icon — repaint recommended texture on the rotation button.
+    for _, exec in pairs(self.executors or {}) do
+      if exec.__LAB_Version then
+        self:UpdateAssistedCombatButtonIcon(exec)
+      end
+    end
     return
   end
   self:RefreshAssistedHighlights()
 end
 
-function Mason:GetAssistedSpellID()
-  if AssistedCombatManager then
-    if AssistedCombatManager.lastNextCastSpellID and AssistedCombatManager.lastNextCastSpellID ~= 0 then
-      return AssistedCombatManager.lastNextCastSpellID
-    end
-    if AssistedCombatManager.GetActionSpellID then
-      local id = AssistedCombatManager:GetActionSpellID()
-      if id and id ~= 0 then
-        return id
-      end
-    end
+function Mason:GetAssistedNextCastSpellID()
+  if AssistedCombatManager and AssistedCombatManager.lastNextCastSpellID
+    and AssistedCombatManager.lastNextCastSpellID ~= 0 then
+    return tonumber(AssistedCombatManager.lastNextCastSpellID)
   end
-  if C_AssistedCombat then
-    if C_AssistedCombat.GetNextCastSpell then
-      local id = C_AssistedCombat.GetNextCastSpell(false)
-      if id and id ~= 0 then
-        return id
-      end
-    end
-    if C_AssistedCombat.GetActionSpell then
-      local id = C_AssistedCombat.GetActionSpell()
-      if id and id ~= 0 then
-        return id
-      end
+  if C_AssistedCombat and C_AssistedCombat.GetNextCastSpell then
+    local id = C_AssistedCombat.GetNextCastSpell(false)
+    if id and id ~= 0 then
+      return tonumber(id)
     end
   end
   return nil
+end
+
+function Mason:GetAssistedActionSpellID()
+  if AssistedCombatManager and AssistedCombatManager.GetActionSpellID then
+    local id = AssistedCombatManager:GetActionSpellID()
+    if id and id ~= 0 then
+      return tonumber(id)
+    end
+  end
+  if C_AssistedCombat and C_AssistedCombat.GetActionSpell then
+    local id = C_AssistedCombat.GetActionSpell()
+    if id and id ~= 0 then
+      return tonumber(id)
+    end
+  end
+  return nil
+end
+
+function Mason:GetAssistedSpellID()
+  return self:GetAssistedNextCastSpellID() or self:GetAssistedActionSpellID()
+end
+
+-- Single-button assistant piece: kit stores the assisted action spell ID.
+function Mason:IsAssistedCombatPiece(piece)
+  if not piece or (piece.type or "spell") ~= "spell" then
+    return false
+  end
+  local actionId = self:GetAssistedActionSpellID()
+  local sid = tonumber(piece.spellID)
+  return actionId and sid and sid == actionId
+end
+
+-- Blizzard action bars ForceUpdateAction so the slot icon tracks next-cast.
+-- Mason faces are LAB spells, not action slots — paint next-cast texture on icon.
+function Mason:UpdateAssistedCombatButtonIcon(exec)
+  if not exec or not exec.icon then
+    return
+  end
+  local piece = exec.masonPieceId and self:FindPiece(exec.masonPieceId)
+  if not self:IsAssistedCombatPiece(piece) then
+    return
+  end
+  local texId = self:GetAssistedNextCastSpellID()
+    or self:GetAssistedActionSpellID()
+    or tonumber(piece.spellID)
+  if not texId then
+    return
+  end
+  if exec.masonAssistedIconSpell == texId then
+    return
+  end
+  local tex
+  if C_Spell and C_Spell.GetSpellTexture then
+    tex = C_Spell.GetSpellTexture(texId)
+  elseif GetSpellTexture then
+    tex = GetSpellTexture(texId)
+  end
+  if tex then
+    exec.icon:SetTexture(tex)
+    exec.masonAssistedIconSpell = texId
+  end
 end
 
 function Mason:AssistedShouldShow(exec)
@@ -660,6 +713,10 @@ function Mason:AssistedShouldShow(exec)
     return false
   end
   local piece = self:FindPiece(exec.masonPieceId)
+  -- Rotation button shows next-cast icon; do not also paint the highlight overlay.
+  if self:IsAssistedCombatPiece(piece) then
+    return false
+  end
   local buttonSpell = exec.GetSpellId and exec:GetSpellId()
   return self:SpellIDsMatch(buttonSpell, rec)
     or (piece and self:SpellIDsMatch(piece.spellID, rec))
@@ -713,6 +770,7 @@ function Mason:RefreshAssistedHighlights()
   for _, exec in pairs(self.executors or {}) do
     if exec.__LAB_Version then
       self:UpdateAssistedHighlight(exec)
+      self:UpdateAssistedCombatButtonIcon(exec)
     end
   end
 end
@@ -781,6 +839,7 @@ function Mason:RegisterFaceCallbacks()
         Mason:ShowFlyoutArrow(button, afterPiece)
       end
       Mason:UpdateAssistedHighlight(button)
+      Mason:UpdateAssistedCombatButtonIcon(button)
       if Mason.ApplyCenteredScale then
         Mason:ApplyCenteredScale(button.masonPieceId)
       elseif Mason.AnchorViewCenter then
@@ -905,6 +964,8 @@ function Mason:ConfigureFace(exec, piece)
   end
   self:StripSlotArt(exec)
   self:UpdateAssistedHighlight(exec)
+  exec.masonAssistedIconSpell = nil
+  self:UpdateAssistedCombatButtonIcon(exec)
   if self.ShowFlyoutArrow then
     self:ShowFlyoutArrow(exec, piece)
   end
@@ -949,6 +1010,8 @@ function Mason:UpdateFace(exec, piece)
   self:SkinFace(exec)
   self:StripSlotArt(exec)
   self:UpdateAssistedHighlight(exec)
+  exec.masonAssistedIconSpell = nil
+  self:UpdateAssistedCombatButtonIcon(exec)
   self:FitFace(exec)
   if self.ApplyCenteredScale then
     self:ApplyCenteredScale(exec.masonPieceId)
