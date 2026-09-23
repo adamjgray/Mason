@@ -292,24 +292,6 @@ function Mason:ApplyRule(exec, piece)
   self:PaintRule(exec)
 end
 
-function Mason:ApplyRules()
-  if InCombatLockdown() then
-    return self:QueueIfCombat(function()
-      self:ApplyRules()
-    end)
-  end
-  self:EnsureRules()
-  local kit = self:GetKit()
-  for id, view in pairs(self:GetViews()) do
-    if view.visible and kit[id] then
-      local exec = self.executors and self.executors[id]
-      if exec then
-        self:ApplyRule(exec, kit[id])
-      end
-    end
-  end
-end
-
 function Mason:SetPieceRuleIds(id, ruleIds)
   local piece = self:FindPiece(id)
   if not piece then

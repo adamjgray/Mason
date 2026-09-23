@@ -57,14 +57,6 @@ function Mason:GetLABHeader()
   return header
 end
 
-local function HonorClicks(exec)
-  if GetCVarBool("ActionButtonUseKeyDown") then
-    exec:RegisterForClicks("AnyDown", "AnyUp")
-  else
-    exec:RegisterForClicks("AnyUp")
-  end
-end
-
 function Mason:GetFaceNativeSize()
   local ab = _G.ActionButton1
   local w = ab and ab.GetWidth and ab:GetWidth()
@@ -389,52 +381,6 @@ function Mason:RefreshItemCounts()
   end
 end
 
-
-function Mason:SpellIDsMatch(a, b)
-  if not a or not b then
-    return false
-  end
-  a, b = tonumber(a), tonumber(b)
-  if not a or not b then
-    return false
-  end
-  if a == b then
-    return true
-  end
-  local function related(id)
-    local ids = { [id] = true }
-    if C_Spell and C_Spell.GetOverrideSpell then
-      local ov = C_Spell.GetOverrideSpell(id)
-      if ov then
-        ids[ov] = true
-      end
-    elseif GetOverrideSpell then
-      local ov = GetOverrideSpell(id)
-      if ov then
-        ids[ov] = true
-      end
-    end
-    if C_SpellBook and C_SpellBook.FindBaseSpellByID then
-      local base = C_SpellBook.FindBaseSpellByID(id)
-      if base then
-        ids[base] = true
-      end
-    elseif FindBaseSpellByID then
-      local base = FindBaseSpellByID(id)
-      if base then
-        ids[base] = true
-      end
-    end
-    return ids
-  end
-  local left, right = related(a), related(b)
-  for id in pairs(left) do
-    if right[id] then
-      return true
-    end
-  end
-  return false
-end
 
 -- Talent / replacement spells (e.g. Greater Invisibility): CastSpellByID no-ops
 -- while CastSpellByName works. LAB Spell handlers need a numeric _state_action
@@ -775,7 +721,7 @@ function Mason:ConfigureFace(exec, piece)
   if exec.DisableDragNDrop then
     exec:DisableDragNDrop(true)
   end
-  HonorClicks(exec)
+  self:HonorExecutorClicks(exec)
   exec.GetHotkey = function()
     if not SHOW_HOTKEY then
       return nil
@@ -901,9 +847,6 @@ function Mason:EnsureExecutor(piece)
         self:WireLockedPickup(exec)
       end
     end
-    if self.WireExecutorView then
-      self:WireExecutorView(exec)
-    end
     return exec
   end
   local LAB = self:GetLAB()
@@ -917,9 +860,6 @@ function Mason:EnsureExecutor(piece)
     exec.masonPieceId = piece.id
     self.executors[piece.id] = exec
     self:ConfigureExecutor(exec, piece)
-    if self.WireExecutorView then
-      self:WireExecutorView(exec)
-    end
     if self.WireLockedPickup then
       self:WireLockedPickup(exec)
     end
@@ -938,9 +878,6 @@ function Mason:EnsureExecutor(piece)
   self.executors[piece.id] = exec
   self:ConfigureFace(exec, piece)
   self:SkinFace(exec)
-  if self.WireExecutorView then
-    self:WireExecutorView(exec)
-  end
   return exec
 end
 
